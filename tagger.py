@@ -224,7 +224,7 @@ class ConcertTagger:
         else:
             return None
 
-    def tag_artwork(self, clear_existing: bool = False, num_threads: int = 5):
+    def tag_artwork(self, clear_existing: bool = False, num_threads: int = None):
         """
         Add artwork to all FLAC files using multithreading.
 
@@ -344,27 +344,27 @@ if __name__ == "__main__":
     logging.basicConfig(filename=logfilename,level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
     config_file = os.path.join(os.path.dirname(__file__),"config.toml")
     config = load_config(config_file)
-    #config = load_config(config_file)
-    
+
+    #if using a dingle folder put it into a list     
     #concert_folders = [
     #    r"X:\Downloads\_FTP\gdead.1991.project\gd1991-05-12.31962.sbd.miller.sbeok.t-flac16"
     #]
     
+    #these examples are paths to a folder containing show folders immediately below them. 
     parentfolderpath = r'M:\To_Tag\gd1983'
-    #parentfolderpath = r'X:\Downloads\_FTP\gdead.1984.project'
-    #parentfolderpath = r'X:\Downloads\_FTP\gdead.0000.FIXME'
+    #parentfolderpath = r'X:\Downloads\_FTP\gdead.1983.project'
+    
+
+
     parentfolder = Path(parentfolderpath).as_posix()
     #concert_folders must be a list of folders that contain folders. Don't pass wht parent directory, it won't be good
     #TODO, add some type of check when scanning the first folder
     #take only one level of directories from the parent folder
-    
     concert_folders = sorted([f.path.replace('\\','/') for f in os.scandir(parentfolder) if f.is_dir()]) 
-    #concert_folders = [r'Z:\Music\Grateful Dead\gd1991\gd1991-10-30.139275.sbd.cm.miller.flac24']
-    etreedb = SQLiteEtreeDB() #make sure this is outside the loop
+    
+    etreedb = SQLiteEtreeDB(db_path="db/etree_tag_dbv2.db") #make sure this is outside the loop called in the below function
     ConcertTagger.tag_shows(concert_folders,etreedb,config)
     
-
-
     etreedb.close
     
     end_time = perf_counter()

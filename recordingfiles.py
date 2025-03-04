@@ -19,23 +19,19 @@ class RecordingFolder:
         if not self.folder.is_dir():
             raise ValueError(f"{concert_folder} is not a valid directory.")
         self.foldershnid = self._parse_shnid(self.folder.name)
-        #self.flac_file_list = list(self.folder.glob("*.flac"))
         self.musicfiles =  [MusicFile(str(x)) for x in self.folder.glob("*.flac")]
-        #self.load_flac_files()
         self.text_files = self.folder.glob("*.txt")
         self.fingerprint_files = self.folder.glob("*.ffp")
         self.st5_files = self.folder.glob("*.st5")
         self.checksums = self._get_checksums(self.musicfiles)
         self.recordingtype = self._classify_folder(self.folder.name)
 
-      
-        #self.artwork_file = self._find_artwork()
-
         logging.info(f"Found {len(self.musicfiles)} FLAC file(s) in {self.folder}")
 
     def _classify_folder(self,folder_name: str) -> str:
         """
         Classify the folder_name based on various substring patterns, similar to a SQL CASE statement.
+        Currently used for tagging shows. 
         
         The matching is done on the lowercase version of folder_name.
         
@@ -118,19 +114,6 @@ class RecordingFolder:
                 return int(part) 
         return None
 
-    # def load_flac_files(self):
-    #     """
-    #     Populate self.flac_files with a mutagen FLAC object for each file in self.flac_file_list.
-    #     Any file that cannot be loaded will be logged as an error.
-    #     """
-    #     self.flac_files = {}
-    #     for file_path in self.flac_file_list:
-    #         try:
-    #             audio = FLAC(str(file_path))
-    #             self.flac_files[file_path]=audio
-    #             logging.info(f"Loaded FLAC file: {file_path}")
-    #         except Exception as e:
-    #             logging.error(f"Error loading FLAC file {file_path}: {e}")
 
     def _find_file_by_keyword(self, ext: str, keyword: str):
         """Return the first file with extension 'ext' whose name contains 'keyword'."""
@@ -175,84 +158,7 @@ class RecordingFolder:
             return self.st5_file.read_text(encoding="utf-8")
         return ""
 
-    # def tag_concert(self, tags: dict):
-    #     """
-    #     Apply the provided tags to all FLAC files in the concert folder.
-
-    #     Args:
-    #         tags (dict): A dictionary of tag key/value pairs (e.g., {"artist": "Bob Dylan", "album": "Live Concert 1994"}).
-    #     """
-    #     for file in self.flac_files:
-    #         try:
-    #             audio = FLAC(str(file))
-    #             for key, value in tags.items():
-    #                 audio[key] = value
-    #             audio.save()
-    #             logging.info(f"Tagged file: {file}")
-    #         except Exception as e:
-    #             logging.error(f"Error tagging file {file}: {e}")
-
-    # def apply_tags(self, tags: dict, clear_all: bool = False, clear_tags: list = None, add_artwork: bool = False, clear_existing_artwork: bool = True):
-    #     """
-    #     Apply text tags and (optionally) artwork to all FLAC files in the concert folder,
-    #     and save each file only once after all modifications are done.
-
-    #     Args:
-    #         tags (dict): Dictionary of tag key/value pairs to apply to each file.
-    #         clear_all (bool): If True, remove all tags and embedded pictures before applying new tags.
-    #         clear_tags (list): If provided and clear_all is False, a list of specific tag keys to remove.
-    #         add_artwork (bool): If True, add artwork from self.artwork_file.
-    #         clear_existing_artwork (bool): If True, remove any existing artwork before adding new artwork.
-    #                                     If False, add artwork only if the file doesn't already have any.
-    #     """
-
-    #     for file in self.flac_files:
-    #         try:
-    #             audio = FLAC(str(file))
-
-    #             # Clear tags as requested
-    #             if clear_all:
-    #                 audio.clear()          # Remove all textual tags
-    #                 audio.clear_pictures() # Remove any embedded artwork
-    #                 logging.info(f"Cleared all tags for {file}")
-    #             elif clear_tags:
-    #                 for tag in clear_tags:
-    #                     if tag in audio:
-    #                         del audio[tag]
-    #                         logging.info(f"Cleared tag '{tag}' for {file}")
-
-    #             # Apply new tags
-    #             for key, value in tags.items():
-    #                 audio[key] = value
-
-    #             # Optionally add artwork
-    #             if add_artwork and self.artwork_file:
-    #                 try:
-    #                     with open(self.artwork_file, "rb") as f:
-    #                         image_data = f.read()
-    #                     pic = Picture()
-    #                     pic.type = 3  # Front cover
-    #                     pic.mime = "image/jpeg"  # Adjust if needed
-    #                     pic.data = image_data
-    #                     if clear_existing_artwork:
-    #                         audio.clear_pictures()
-    #                         audio.add_picture(pic)
-    #                         logging.info(f"Cleared and added artwork to {file}")
-    #                     else:
-    #                         if not audio.pictures:
-    #                             audio.add_picture(pic)
-    #                             logging.info(f"Added artwork to {file}")
-    #                         else:
-    #                             logging.info(f"Artwork already exists in {file}")
-    #                 except Exception as art_e:
-    #                     logging.error(f"Error adding artwork to {file}: {art_e}")
-
-    #             # Save changes once per file after all modifications are done
-    #             audio.save()
-    #             logging.info(f"Saved file: {file}")
-
-    #         except Exception as e:
-    #             logging.error(f"Error processing file {file}: {e}")
+    
     
 class MusicFile:
     def __init__(self,path):
@@ -275,34 +181,10 @@ class MusicFile:
 if __name__ == "__main__":
     import logging
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
-
-    # Replace with your concert folder path.
-    #concert_folder = r"X:\Downloads\_FTP\gdead.1978.project_missing\gd1978-11-24.303.flac16"
+    #TODO: below is unimplemented for load to db so far, but will be used to pull entries into the database from files. Current code needs a cleanup and will be merged into this module
     concert_folder = r"X:\Downloads\_FTP\gdead.1982.project_missing\gd1982-09-12.7826.sbd.ladner.sbeok.flac16"
     tagger = RecordingFolder(concert_folder)
     rows = tagger.build_track_inserts()
     for row in rows:
         print(row)
         
-
-    # Optionally, print auxiliary file contents.
-"""   
-    print("Info file contents:")
-    print(tagger.read_info())
-    print("\nFingerprint file contents:")
-    print(tagger.read_fingerprint())
-    print("\nChecksum file contents:")
-    print(tagger.read_checksums())
-""" 
-    # Define some tags to apply.
-"""
-    tags_to_apply = {
-        "artist": "Bob Dylan",
-        "album": "Live at the Palace Theater",
-        "date": "1994-10-16",
-        "location": "Palace Theater"
-    }
-    tagger.tag_concert(tags_to_apply)
-    tagger.tag_artwork()
-    print("Tagging complete.")
-"""    

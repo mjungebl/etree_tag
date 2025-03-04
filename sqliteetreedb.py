@@ -1,19 +1,21 @@
 import sqlite3
 import logging
 import datetime
+import csv
 
 class SQLiteEtreeDB:
-    def __init__(self, db_path="db/etree_scrape.db", log_level=logging.ERROR):
+    def __init__(self, db_path="db/etree_tag_db.db", log_level=logging.ERROR):
         """Initialize database connection and set up logging."""
         self.db_path = db_path
         self.conn = sqlite3.connect(self.db_path)
         self.cursor = self.conn.cursor()
+        self.initialize_eventdb()
         self.translations = self.build_title_transformations_dict()
         # Set up logging
         logging.basicConfig(level=log_level, format="%(asctime)s - %(levelname)s - %(message)s")
         
         # Initialize tables
-        self.initialize_eventdb()
+        
 
     def initialize_eventdb(self):
         """Creates necessary tables if they do not exist."""
@@ -29,11 +31,22 @@ class SQLiteEtreeDB:
                     PRIMARY KEY (shnid, md5key, base_filename,file_extension)
                 )
             """)
+            self.cursor.execute('SELECT COUNT(*) FROM signatures;')
+            count = self.cursor.fetchone()[0]
+            if count == 0:
+                with open('db/csv/signatures.csv', 'r', newline='') as csvfile:
+                    reader = csv.DictReader(csvfile)  # Uses the first row as headers
+                    rows = []
+                    for row in reader:
+                        # Adjust the keys if necessary to match your table's columns
+                        rows.append((row['shnid'], row['md5key'], row['base_filename'], row['file_extension'], row['audio_checksum']))
+                    self.cursor.executemany('INSERT INTO signatures (shnid,md5key,base_filename,file_extension,audio_checksum) VALUES (?, ?, ?, ?, ?)', rows)
+                        #self.conn.commit()
 
             self.cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_audio_checksum ON signatures(audio_checksum)
             """)
-
+                          
             self.cursor.execute("""
                 CREATE TABLE IF NOT EXISTS shnlist (
                     shnid INTEGER PRIMARY KEY,
@@ -42,22 +55,42 @@ class SQLiteEtreeDB:
                     CircDateAddedSource TEXT,
                     ChecksumsSource TEXT,
                     Source TEXT,
-                    artist_id INTEGER
+                    artist_id INTEGER,
+                    Venue TEXT,
+                    City TEXT
+                )
+            """)
+            self.cursor.execute('SELECT COUNT(*) FROM shnlist;')
+            count = self.cursor.fetchone()[0]
+            if count == 0:
+                with open('db/csv/shnlist.csv', 'r', newline='') as csvfile:
+                    reader = csv.DictReader(csvfile)  # Uses the first row as headers
+                    rows = []
+                    for row in reader:
+                        # Adjust the keys if necessary to match your table's columns
+                        rows.append((row['shnid'], row['Date'], row['VenueSource'], row['CircDateAddedSource'], row['ChecksumsSource'], row['Source'], row['artist_id'], row['Venue'], row['City']))
+                    self.cursor.executemany('INSERT INTO shnlist (shnid,Date,VenueSource,CircDateAddedSource,ChecksumsSource,Source,artist_id,Venue,City) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', rows)
+                        #self.conn.commit()
+
+            self.cursor.execute("""
+                CREATE TABLE IF NOT EXISTS title_transformations (
+                    title       TEXT,
+                    title_clean TEXT,
+                    gazinta     TEXT
                 )
             """)
 
-            # self.cursor.execute("""
-            #     CREATE TABLE IF NOT EXISTS tracks (
-            #         disc TEXT,
-            #         track_number TEXT,
-            #         shnid INTEGER,
-            #         filename TEXT,
-            #         title TEXT,
-            #         folder_name TEXT,
-            #         fingerprint TEXT,
-            #         PRIMARY KEY (fingerprint, shnid)
-            #     )
-            # """)
+            self.cursor.execute('SELECT COUNT(*) FROM title_transformations;')
+            count = self.cursor.fetchone()[0]            
+            if count == 0:
+                with open('db/csv/title_transformations.csv', 'r', newline='') as csvfile:
+                    reader = csv.DictReader(csvfile)  # Uses the first row as headers
+                    rows = []
+                    for row in reader:
+                        # Adjust the keys if necessary to match your table's columns
+                        rows.append((row['title'], row['title_clean'], row['gazinta']))
+                    self.cursor.executemany('INSERT INTO title_transformations (title,title_clean,gazinta) VALUES (?, ?, ?)', rows)
+                        #self.conn.commit()
 
             self.cursor.execute("""
                 CREATE TABLE IF NOT EXISTS artists (
@@ -66,7 +99,7 @@ class SQLiteEtreeDB:
                 )
             """)
 
-            # Insert predefined artists
+            # Insert predefined artists, no need for a csv yet
             artists_data = [
                 (2, 'Grateful Dead'),
                 (4, 'Phish'),
@@ -92,6 +125,17 @@ class SQLiteEtreeDB:
                     md5key INTEGER
                 )
             """)
+            self.cursor.execute('SELECT COUNT(*) FROM track_metadata;')
+            count = self.cursor.fetchone()[0]
+            if count == 0:
+                with open('db/csv/track_metadata.csv', 'r', newline='') as csvfile:
+                    reader = csv.DictReader(csvfile)  # Uses the first row as headers
+                    rows = []
+                    for row in reader:
+                        # Adjust the keys if necessary to match your table's columns
+                        rows.append((row['shnid'], row['disc_number'], row['track_number'], row['title'], row['fingerprint'], row['bit_depth'], row['frequency'], row['length'], row['channels'], row['filename'], row['title_clean'], row['gazinta'], row['md5key']))
+                    self.cursor.executemany('INSERT INTO track_metadata (shnid,disc_number,track_number,title,fingerprint,bit_depth,frequency,length,channels,filename,title_clean,gazinta,md5key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', rows)
+                        #self.conn.commit()
 
             # Create an index on shnid if it doesn't exist.
             self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_shnid ON track_metadata (shnid)")
@@ -108,9 +152,23 @@ class SQLiteEtreeDB:
                     filename TEXT
                 )
             """)
+
+            self.cursor.execute('SELECT COUNT(*) FROM checksum_files;')
+            count = self.cursor.fetchone()[0]
+            if count == 0:
+                with open('db/csv/checksum_files.csv', 'r', newline='') as csvfile:
+                    reader = csv.DictReader(csvfile)  # Uses the first row as headers
+                    rows = []
+                    for row in reader:
+                        # Adjust the keys if necessary to match your table's columns
+                        rows.append((row['md5key'], row['shnid'], row['label'], row['filename']))
+                    self.cursor.executemany('INSERT INTO checksum_files (md5key,shnid,label,filename) VALUES (?, ?, ?, ?)', rows)
+                        #self.conn.commit()
+
             # Create an index on shnid for faster lookups.
             self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_checksum_files_shnid ON checksum_files (shnid)")         
-
+            
+            #no need to insert data here. This is used as a log for importing. 
             self.cursor.execute("""
                 CREATE TABLE IF NOT EXISTS folder_shnid_log (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -183,18 +241,6 @@ class SQLiteEtreeDB:
         except sqlite3.Error as e:
             logging.error(f"SQLite error in store_artist_events: {e}")
 
-    # def store_tracks(self, records):
-    #     """Stores a list of track records in the 'tracks' table."""
-    #     try:
-    #         self.cursor.executemany("""
-    #             INSERT OR IGNORE INTO tracks 
-    #             (disc, track_number, shnid, filename, title, folder_name, fingerprint)
-    #             VALUES (?, ?, ?, ?, ?, ?, ?)
-    #         """, records)
-    #         self.conn.commit()
-
-    #     except sqlite3.Error as e:
-    #         logging.error(f"SQLite error in store_tracks: {e}")
 
     def get_shnid_info(self, shnid):
         """Retrieves a formatted string containing event info based on shnid."""
@@ -276,31 +322,6 @@ class SQLiteEtreeDB:
         except sqlite3.Error as e:
             logging.error(f"SQLite error in get_ffp_record_by_checksum: {e}")
             return None
-
-    # def get_tracks_by_shnid(self, shnid):
-    #     """Retrieves all tracks for the given shnid."""
-    #     try:
-    #         self.cursor.execute("""
-    #             SELECT * FROM tracks WHERE shnid = ?
-    #         """, (shnid,))
-    #         return self.cursor.fetchall()
-
-    #     except sqlite3.Error as e:
-    #         logging.error(f"SQLite error in get_tracks_by_shnid: {e}")
-    #         return []
-
-    # def get_tracks_by_shnid_dict(self, shnid):
-    #     """Retrieves all track records for a given shnid and returns them as a dictionary."""
-    #     try:
-    #         self.cursor.execute("""
-    #             SELECT * FROM tracks WHERE shnid = ?
-    #         """, (shnid,))
-    #         records = self.cursor.fetchall()
-    #         return {rec[-1]: rec[:-1] for rec in records}
-
-    #     except sqlite3.Error as e:
-    #         logging.error(f"SQLite error in get_tracks_by_shnid_dict: {e}")
-    #         return {}
 
     def get_existing_events(self):
         """Retrieves all existing shnids in the 'shnlist' table as a set."""
@@ -862,11 +883,12 @@ class Track:
         self.bitabbrev = bit_depth+'-'+frequency.rstrip("0")
 
 
-
-
-# Example Usage
 if __name__ == "__main__":
-    db = SQLiteEtreeDB(log_level=logging.INFO)  # Change log level as needed
-    rec = EtreeRecording(db,124439)
-    rec.build_info_file()
+    db = SQLiteEtreeDB(db_path="db/etree_tag_dbv2.db",log_level=logging.INFO)  # Change log level as needed
+    #rec = EtreeRecording(db,124439)
+    #rec.build_info_file()  #only works if the track metadata is populated. 
+    #db.cursor.execute('SELECT COUNT(*) FROM track_metadata;')
+    #count = db.cursor.fetchone()[0]
+    #print(f'{count=}')
+    
     db.close()

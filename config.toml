@@ -1,0 +1,40 @@
+# flac_config.toml
+# Configuration for FLAC Tagging Application
+
+[preferences]
+# Set the year format for tags.
+# Valid options: "2-digit" or "4-digit"
+year_format = "4-digit"
+segue_string = "->"
+soundboard_abbrev = "sbd"
+aud_abbrev = "aud"
+matrix_abbrev = "mtx"
+ultramatrix_abbrev = "ultramatrix"
+[album_tag]
+# Toggle inclusion of optional components in the album tag.
+include_bitrate = true
+include_bitrate_not16_only = true
+include_venue   = false
+include_city    = true
+
+# Specify the order in which the selected components should appear.
+# Valid values: "bitrate", "venue", "city", "shnid", "date"
+# Only include the components that are enabled above.
+order = ["date","city", "shnid","bitrate"]
+#use the below lists to add a string before or after each of the sections. Include any spaces that are desired. 
+prefix = ['','','(','[']
+suffix = ['','',')',']']
+#specify the directories to search for artwork in the order in which they should be searched order to search.
+# Underneath these folders the files are separated into subdirectories by year. the search will append the year to the directory and if a directory
+#   exists for the given year, that directory will be searched in each folder. 
+#   the search will look for *.jpg files that start with the artist abbreviation followed by the exact date of the concert in YYYY-MM-DD format,
+#   for example: "GD_Art/TV_Artwork/1975/gd1975-03-23-Kezar-Stadium.jpg" would be returned when searching for the concert that took place on Mar 23, 1975,
+#   unless there was a file matching that date in "GD_Art/EE_Artwork/", of course
+[cover]
+artwork_folders = ['GD_Art/EE_Artwork/', 'GD_Art/TV_Artwork/']
+#this image will be used if no image is found for the given date in the paths above
+defaultimage_path = 'GD_Art/default.jpg'
+
+
+
+# Additional configuration settings can be added below.

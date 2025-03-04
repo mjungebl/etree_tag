@@ -36,7 +36,7 @@
 
 ## Configuration (CURRENTLY ONLY THE COVER SECTION IS ENABLED)
 
-A sample `config.toml` file might look like this:
+A sample `config.toml` file might look like this (which is also included):
 
 ```toml
 [cover]
@@ -63,4 +63,18 @@ order = "date_venue"
 prefix = ""
 suffix = ""
 
-x
+## Usage
+My current recommendation is to run this from the tagger.py script. In the section at the bottom, change the "parentfolderpath" to the path to a folder that contains show folders.
+I'd create a new folder and copy one or two shows into that folder and see how it works rather than running it on a lot of files at once. 
+
+parentfolderpath = r'c:/showstotag' #note that I used a forward slash, this is not necessary on Windows, but make sure the string is precedded with the r.
+Put a couple of shows in that folder and try running it. Currently it won't tag song titles unless they're in the database already (over 8,000 are in there though). It will only do the album, artwork and comments. 
+
+There is a script called "InfoFileTagger.py" that can be used to tag the songs. It requires a text file in the directory to contain the shnid and have numbered tracks d1t01 if disc numbers are preferred or 01. song name, 01 song name, or a couple of other formats. I'll be incorporating that functionality directly in a later version. 
+
+NOTE: the call create the SQLiteEtreeDB passes a database in (sqlite). initially that database won't exist. when it initializes it will be populated from the csvs contained in the folder "db/csv/". If you move those files and have not initialized the database, you'll need to change the relative path to the csv files in sqliteetreedb.py. I'll be adding that to the config at some point, but for now, I'd leave them alone. That was a last minute change because the db is too large for github.  Also, as I ahve not added my scraping code to this project, this give a manual way to add more info to the db, for anyone inclined to do this that is not comfortable working with databases. 
+The call I'm referring to is this one:
+etreedb = SQLiteEtreeDB(db_path="db/etree_tag_dbv2.db")
+
+My recommendation for now is to leave things as-is and jsut run it.  I'll be making updates in the coming weeks as I have time.
+
