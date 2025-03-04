@@ -13,10 +13,10 @@
 ## Table of Contents
 
 1. [Requirements](#requirements)  
-2. [Configuration](#configuration)  
-3. [Usage](#usage)  
-4. [Script Overview](#script-overview)  
-5. [License](#license)
+2. [Usage](#usage)  
+4. [Script Overview](#script-overview)
+5. [Configuration](#configuration)  
+6. [License](#license)
 
 ---
 
@@ -31,6 +31,22 @@
      - For Python < 3.11, install [tomli](https://pypi.org/project/tomli/) and adjust imports.
 3. **SQLite Database** for Etree recordings (`sqliteetreedb.py` should handle it).
 4. **`recordingfiles.py`** module to locate FLAC files and checksums.
+
+
+## Usage
+My current recommendation is to run this from the tagger.py script. In the section at the bottom, change the "parentfolderpath" to the path to a folder that contains show folders.
+I'd create a new folder and copy one or two shows into that folder and see how it works rather than running it on a lot of files at once. 
+
+parentfolderpath = r'c:/showstotag' #note that I used a forward slash, this is not necessary on Windows, but make sure the string is precedded with the r.
+Put a couple of shows in that folder and try running it. Currently it won't tag song titles unless they're in the database already (over 8,000 are in there though). It will only do the album, artwork and comments. 
+
+There is a script called "InfoFileTagger.py" that can be used to tag the songs. It requires a text file in the directory to contain the shnid and have numbered tracks d1t01 if disc numbers are preferred or 01. song name, 01 song name, or a couple of other formats. I'll be incorporating that functionality directly in a later version. 
+
+NOTE: the call create the SQLiteEtreeDB passes a database in (sqlite). initially that database won't exist. when it initializes it will be populated from the csvs contained in the folder "db/csv/". If you move those files and have not initialized the database, you'll need to change the relative path to the csv files in sqliteetreedb.py. I'll be adding that to the config at some point, but for now, I'd leave them alone. That was a last minute change because the db is too large for github.  Also, as I ahve not added my scraping code to this project, this give a manual way to add more info to the db, for anyone inclined to do this that is not comfortable working with databases. 
+The call I'm referring to is this one:
+etreedb = SQLiteEtreeDB(db_path="db/etree_tag_dbv2.db")
+
+My recommendation for now is to leave things as-is and jsut run it.  I'll be making updates in the coming weeks as I have time.
 
 ---
 
@@ -62,19 +78,3 @@ include_city = true
 order = "date_venue"
 prefix = ""
 suffix = ""
-
-## Usage
-My current recommendation is to run this from the tagger.py script. In the section at the bottom, change the "parentfolderpath" to the path to a folder that contains show folders.
-I'd create a new folder and copy one or two shows into that folder and see how it works rather than running it on a lot of files at once. 
-
-parentfolderpath = r'c:/showstotag' #note that I used a forward slash, this is not necessary on Windows, but make sure the string is precedded with the r.
-Put a couple of shows in that folder and try running it. Currently it won't tag song titles unless they're in the database already (over 8,000 are in there though). It will only do the album, artwork and comments. 
-
-There is a script called "InfoFileTagger.py" that can be used to tag the songs. It requires a text file in the directory to contain the shnid and have numbered tracks d1t01 if disc numbers are preferred or 01. song name, 01 song name, or a couple of other formats. I'll be incorporating that functionality directly in a later version. 
-
-NOTE: the call create the SQLiteEtreeDB passes a database in (sqlite). initially that database won't exist. when it initializes it will be populated from the csvs contained in the folder "db/csv/". If you move those files and have not initialized the database, you'll need to change the relative path to the csv files in sqliteetreedb.py. I'll be adding that to the config at some point, but for now, I'd leave them alone. That was a last minute change because the db is too large for github.  Also, as I ahve not added my scraping code to this project, this give a manual way to add more info to the db, for anyone inclined to do this that is not comfortable working with databases. 
-The call I'm referring to is this one:
-etreedb = SQLiteEtreeDB(db_path="db/etree_tag_dbv2.db")
-
-My recommendation for now is to leave things as-is and jsut run it.  I'll be making updates in the coming weeks as I have time.
-
