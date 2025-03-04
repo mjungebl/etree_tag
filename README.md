@@ -2,10 +2,10 @@
 
 **Concert Tagger** is a Python script that tags FLAC music files (especially Grateful Dead recordings) with metadata and artwork. It:
 
-- Reads checksums from local folders to match a recording against an SQLite-based Etree database (`sqliteetreedb.py`).
+- Reads checksums from flac files in local folders to match a recording against an SQLite-based Etree database (accessed via `sqliteetreedb.py`).
 - Adds or updates tags (artist, album, track info, etc.) in the FLAC files.
 - Finds and embeds cover artwork if available.
-- Optionally clears existing embedded artwork before adding the new image.
+- Optionally clears existing embedded artwork before adding the new image. (currently requires a code change)
 - Copies an artwork file (`folder.jpg`) into each folder for quick visual identification.
 
 ---
@@ -22,7 +22,7 @@
 
 ## Requirements
 
-1. **Python 3.9+** (recommended, though older versions may work).
+1. **Python 3.11+** (recommended, though older versions may work).
 2. **Packages**:
    - [mutagen](https://mutagen.readthedocs.io/) (for reading/writing FLAC tags)
    - [tqdm](https://pypi.org/project/tqdm/) (for progress bars)
@@ -34,6 +34,7 @@
 
 
 ## Usage
+Best way to get started is to use uv sync to get this up and running. Otherwise set up an environment with the requirements listed above. (only mutagen and tqdn need to be installed if using python 3.11 or greater. I used 3.13)
 My current recommendation is to run this from the tagger.py script. In the section at the bottom, change the "parentfolderpath" to the path to a folder that contains show folders.
 I'd create a new folder and copy one or two shows into that folder and see how it works rather than running it on a lot of files at once. 
 
