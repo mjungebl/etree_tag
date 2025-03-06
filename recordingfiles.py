@@ -17,6 +17,7 @@ class RecordingFolder:
         """
         self.folder = Path(concert_folder)
         if not self.folder.is_dir():
+            logging.error(f"{concert_folder} is not a valid directory.")
             raise ValueError(f"{concert_folder} is not a valid directory.")
         self.foldershnid = self._parse_shnid(self.folder.name)
         self.musicfiles =  [MusicFile(str(x)) for x in self.folder.glob("*.flac")]

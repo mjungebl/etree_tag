@@ -5,15 +5,36 @@ import argparse
 import logging
 from glob import glob
 from mutagen.flac import FLAC
+from datetime import datetime
+
+
+def is_valid_date(date_str):
+    formats = ['%y-%m-%d', '%Y-%m-%d', '%m-%d-%Y', '%m-%d-%y']
+    #print(f'{date_str=}')
+    for fmt in formats:
+        try:
+            dateval =  datetime.strptime(date_str, fmt)
+        except ValueError:
+            continue
+        if dateval:
+            print(f'Date Found, skipping line: "{date_str}"')
+            logging.info(f'Date Found, skipping line: "{date_str}"')
+            return True
+    return False  # or raise an exception if preferred
+    
 
 def file_sort_key(filepath):
     base = os.path.splitext(os.path.basename(filepath))[0]
-    m = re.search(r"[ds](\d+)[tT](\d+)$", base, re.IGNORECASE)
+    m = re.search(r"[ds](\d+)[tT](\d+)", base, re.IGNORECASE)
+    #m = re.search(r"[ds](\d+)[tT](\d+)$", base, re.IGNORECASE)
     if m:
         disc = int(m.group(1))
         track = int(m.group(2))
+        print(filepath,disc,track)
         return (disc, track)
+        
     else:
+        print(filepath)
         return (float('inf'), base.lower())
 
 
@@ -42,7 +63,6 @@ def clean_track_name(title):
     title = re.sub(r'\(\s*\d{1,2}:\d{2}(?:\.\d{1,3})?\s*\)', '', title)
     # Remove time patterns (e.g. "06:03" or "06:03.667").
     title = re.sub(r'\b\d{1,2}:\d{2}(?:\.\d{1,3})?\b', '', title)
-
     # Remove all asterisk characters.
     title = title.replace('*', '')
     # Remove a leading "->" or ">" with optional whitespace.
@@ -51,8 +71,14 @@ def clean_track_name(title):
     if not 'encore break' in title.lower():
         title = re.sub(r"^encore:?\s*", "", title, flags=re.IGNORECASE)
         title = re.sub(r"[\(\[]\s*encore\s*[\)\]]", "", title, flags=re.IGNORECASE)
+    title = re.sub(r'^\s*e:\s*', '', title, flags=re.IGNORECASE)
     #get rid of leading dashes:
     title = re.sub(r'^\s*-\s*', '', title)
+    # Ensure ">" is preceded by a space.
+    title = title.replace('->', '>')
+    title = re.sub(r'(?<!\s)>', ' >', title)
+    # Ensure ">" is followed by a space if not already followed by whitespace or end-of-string.
+    title = re.sub(r'>(?!\s|$)', '> ', title)    
     # Strip leading/trailing whitespace.
     cleaned = title.strip()
     return cleaned if cleaned else original
@@ -185,168 +211,237 @@ def parse_info_file(directory_path):
     info_files = [f for f in os.listdir(directory_path)
                   if f.endswith(".txt") and re.match(r"^[^.]+\.\d+\.txt$", f)]
     if not info_files:
+        logging.warn("No info file with shnid found in the directory, checking for a txt file")
+        info_files = [f for f in os.listdir(directory_path)
+                    if f.endswith(".txt")]    
+
+    if not info_files:
         logging.error("No info file found in the directory.")
         return {}
-    if len(info_files) > 1:
-        logging.warning("Multiple info files found. Using the first one found.")
-    info_file = info_files[0]
-    info_file_path = os.path.join(directory_path, info_file)
-    logging.info(f"Using info file: {info_file_path}")
+    #if len(info_files) > 1:
+    #    logging.warning("Multiple info files found. Using the first one found.")
+    for info_file in info_files:
+        #info_file = info_files[0]
+        try:
+            info_file_path = os.path.join(directory_path, info_file)
+            logging.info(f"Using info file: {info_file_path}")
 
-    # Read nonempty lines.
-    try:
-        with open(info_file_path, "r", encoding="utf-8") as f:
-            lines = [line.strip() for line in f if line.strip()]
-    except Exception as e:
-        logging.error(f"Error reading info file {info_file_path}: {e}")
-        return {}
+        # Read nonempty lines.
+            try:
+                with open(info_file_path, "r", encoding="utf-8") as f:
+                    lines = [line.strip() for line in f if line.strip()]
+            except Exception as e:
+                logging.error(f"Error reading info file {info_file_path}: {e}")
+                return {}
 
-    # Define the regex patterns.
-    #new_pattern      = re.compile(r"^[ds](\d+)\s*t(\d+)[.\-]?\s+(.*)$", re.IGNORECASE)
-    #new_pattern      = re.compile(r"^[ds](\d+)\s?t(\d+)[.\-]?\s+(.*)$", re.IGNORECASE)
-    new_pattern       = re.compile(r"^[ds]\s*(\d+)\s*t\s*(\d+)[.\-]?\s+(.*)$", re.IGNORECASE)
-    no_disc_pattern   = re.compile(r"^t(\d+)[.\-]?\s+(.*)$", re.IGNORECASE)
-    old_pattern       = re.compile(r"^\s*(\d+)(?:(?:[.\-]\s*)|\s+)(.*)$")
-    snnn_pattern      = re.compile(r"^s(\d{3})[.\-]?\s+(.*)$", re.IGNORECASE)
+            # Define the regex patterns.
+            #new_pattern      = re.compile(r"^[ds](\d+)\s*t(\d+)[.\-]?\s+(.*)$", re.IGNORECASE)
+            #new_pattern      = re.compile(r"^[ds](\d+)\s?t(\d+)[.\-]?\s+(.*)$", re.IGNORECASE)
+            new_pattern       = re.compile(r"^[ds]\s*(\d+)\s*t\s*(\d+)[.\-]?\s+(.*)$", re.IGNORECASE)
+            no_disc_pattern   = re.compile(r"^t(\d+)[.\-]?\s+(.*)$", re.IGNORECASE)
+            old_pattern       = re.compile(r"^\s*(\d+)(?:(?:[.\-]\s*)|\s+)(.*)$")
+            snnn_pattern      = re.compile(r"^s(\d{3})[.\-]?\s+(.*)$", re.IGNORECASE)
 
-    # Helper: check track order.
-    def tracks_in_order(entries):
-        groups = {}
-        for disc, track_str, title in entries:
-            num = int(track_str)
-            # Use disc as key; if disc is None, use a separate key.
-            key = disc if disc is not None else "no_disc"
-            groups.setdefault(key, []).append(num)
-        #for group,item in groups.items():
-        #    print(group,item)
-        for key, numbers in groups.items():
-            if key == "no_disc":
-                for i in range(1, len(numbers)):
-                    if numbers[i] <= numbers[i-1]:
-                        return False
-            else:
-                numbers.sort()
-                if numbers[0] != 1:
-                    return False
-                for i in range(1, len(numbers)):
-                    #print(numbers[i], numbers[i-1])
-                    if numbers[i] != numbers[i-1] + 1:
-                        return False
-        return True
+            # Helper: check track order.
+            # def tracks_in_order(entries):
+            #     groups = {}
+            #     for disc, track_str, title in entries:
+            #         num = int(track_str)
+            #         # Use disc as key; if disc is None, use a separate key.
+            #         key = disc if disc is not None else "no_disc"
+            #         groups.setdefault(key, []).append(num)
+            #     #for group,item in groups.items():
+            #     #    print(group,item)
+            #     for key, numbers in groups.items():
+            #         if key == "no_disc":
+            #             for i in range(1, len(numbers)):
+            #                 if numbers[i] <= numbers[i-1]:
+            #                     for number in numbers:
+            #                         print(f'{number=}')                        
+            #                     return False
+            #         else:
+            #             numbers.sort()
+            #             if numbers[0] != 1:
+            #                 for number in numbers:
+            #                     print(f'{number=}')                    
+            #                 return False
+            #             for i in range(1, len(numbers)):
+            #                 #print(numbers[i], numbers[i-1])
+            #                 if numbers[i] != numbers[i-1] + 1:
+            #                     for number in numbers:
+            #                         print(f'{number=}')
+            #                     return False
+            #     return True
+            def tracks_in_order(entries):
+                """
+                Checks that the list of entries (each a tuple: (disc, track_str, title))
+                satisfies one of two conditions:
+                
+                Condition 1: For each disc (when disc is not None), track numbers are consecutive starting at 1.
+                Condition 2: When sorted by disc and track number, the overall track numbers are strictly increasing.
+                
+                Returns True if either condition is met, and False otherwise.
+                """
+                # Condition 1: Check per-disc consecutive order.
+                condition1 = True
+                groups = {}
+                for disc, track_str, title in entries:
+                    # Group by disc. Note: if disc is None, treat it as a separate group.
+                    groups.setdefault(disc, []).append(int(track_str))
+                for disc, numbers in groups.items():
+                    # For disc groups where disc is not None, enforce that numbering starts at 1 and is consecutive.
+                    if disc is not None:
+                        numbers.sort()
+                        if numbers[0] != 1:
+                            condition1 = False
+                            break
+                        for i in range(1, len(numbers)):
+                            if numbers[i] != numbers[i - 1] + 1:
+                                condition1 = False
+                                break
+                        if not condition1:
+                            break
+                    else:
+                        # If disc is None, we do not enforce the "start at 1" rule in Condition 1.
+                        # (You might consider that a failure of condition1 if you expect disc always to be set.)
+                        condition1 = False
+                        break
 
-    # Helper: try a given pattern.
-    def try_pattern(pattern, auto_assign_disc=False):
-        entries = []
-        auto_disc = 1
-        prev_auto_track = None
-        for line in lines:
-            m = pattern.match(line)
-            if m:
-                if pattern == new_pattern:
+                # Condition 2: Check that overall track numbers are strictly increasing
+                sorted_entries = sorted(
+                    entries,
+                    key=lambda x: ((int(x[0]) if x[0] is not None else 0), int(x[1]))
+                )
+                condition2 = True
+                for i in range(1, len(sorted_entries)):
+                    prev = int(sorted_entries[i - 1][1])
+                    curr = int(sorted_entries[i][1])
+                    if curr <= prev:
+                        condition2 = False
+                        break
+
+                return condition1 or condition2
+
+            # Helper: try a given pattern.
+            def try_pattern(pattern, auto_assign_disc=False):
+                entries = []
+                auto_disc = 1
+                prev_auto_track = None
+                for line in lines:
+                    if is_valid_date(line.split()[0].strip()):
+                        continue
+                    m = pattern.match(line)
+                    if m:
+                        if pattern == new_pattern:
+                            disc = int(m.group(1))
+                            track = int(m.group(2))
+                            title = m.group(3).strip()
+                            title = clean_track_name(title)
+                            entries.append((disc, f"{track:02d}", title))
+                        elif pattern == no_disc_pattern:
+                            disc = 1
+                            track = int(m.group(1))
+                            title = m.group(2).strip()
+                            title = clean_track_name(title)
+                            entries.append((disc, f"{track:02d}", title))
+                        elif pattern == old_pattern:
+                            track_number = int(m.group(1))
+                            title = m.group(2).strip()
+                            title = clean_track_name(title)
+                            if auto_assign_disc:
+                                if prev_auto_track is not None and track_number == 1:
+                                    auto_disc += 1
+                                entries.append((auto_disc, f"{track_number:02d}", title))
+                                prev_auto_track = track_number
+                        elif pattern == snnn_pattern:
+                            # For sNNN, use the first digit as disc and the last two as track.
+                            value = m.group(1)  # e.g., "101" or "212"
+                            disc = int(value[0])
+                            track = value[1:]   # already two digits
+                            title = m.group(2).strip()
+                            title = clean_track_name(title)
+                            entries.append((disc, track, title))
+                    #if len(entries) == len(flac_files):
+                    #    break
+                return entries
+
+            # Try each pattern individually.
+            patterns_to_try = [
+                (new_pattern, False),
+                (no_disc_pattern, False),
+                (old_pattern, True),
+                (snnn_pattern, False)
+            ]
+            for pat, auto_assign in patterns_to_try:
+                track_entries = try_pattern(pat, auto_assign_disc=auto_assign)
+                for entry in track_entries:
+                    print(entry)
+                print(f"{pat=} {n_files=}")
+                if track_entries and len(track_entries) == n_files and tracks_in_order(track_entries):
+                    logging.info(f"Pattern {pat.pattern} produced valid results.")
+                    mapping = {flac_files[i]: track_entries[i] for i in range(n_files)}
+                    return mapping
+
+            # If none of the first loops yielded any results (i.e. all empty), don't perform a merged loop.
+            if (not try_pattern(new_pattern) and not try_pattern(no_disc_pattern)
+                    and not try_pattern(old_pattern) and not try_pattern(snnn_pattern)):
+                logging.error("None of the individual patterns produced any track entries.")
+                return {}
+
+            # Fourth (merged) loop: try each pattern in order on each line.
+            track_entries = []
+            auto_disc = 1
+            prev_auto_track = None
+            for line in lines:
+                m = new_pattern.match(line)
+                if m:
                     disc = int(m.group(1))
                     track = int(m.group(2))
-                    title = m.group(3).strip()
-                    title = clean_track_name(title)
-                    entries.append((disc, f"{track:02d}", title))
-                elif pattern == no_disc_pattern:
+                    title = clean_track_name(m.group(3).strip())
+                    track_entries.append((disc, f"{track:02d}", title))
+                    continue
+                m = no_disc_pattern.match(line)
+                if m:
                     disc = 1
                     track = int(m.group(1))
-                    title = m.group(2).strip()
-                    title = clean_track_name(title)
-                    entries.append((disc, f"{track:02d}", title))
-                elif pattern == old_pattern:
+                    title = clean_track_name(m.group(2).strip())
+                    track_entries.append((disc, f"{track:02d}", title))
+                    continue
+                m = old_pattern.match(line)
+                if m:
                     track_number = int(m.group(1))
-                    title = m.group(2).strip()
-                    title = clean_track_name(title)
-                    if auto_assign_disc:
-                        if prev_auto_track is not None and track_number == 1:
-                            auto_disc += 1
-                        entries.append((auto_disc, f"{track_number:02d}", title))
-                        prev_auto_track = track_number
-                elif pattern == snnn_pattern:
-                    # For sNNN, use the first digit as disc and the last two as track.
-                    value = m.group(1)  # e.g., "101" or "212"
+                    title = clean_track_name(m.group(2).strip())
+                    if prev_auto_track is not None and track_number == 1:
+                        auto_disc += 1
+                    track_entries.append((auto_disc, f"{track_number:02d}", title))
+                    prev_auto_track = track_number
+                    continue
+                m = snnn_pattern.match(line)
+                if m:
+                    value = m.group(1)
                     disc = int(value[0])
-                    track = value[1:]   # already two digits
-                    title = m.group(2).strip()
-                    title = clean_track_name(title)
-                    entries.append((disc, track, title))
-        return entries
-
-    # Try each pattern individually.
-    patterns_to_try = [
-        (new_pattern, False),
-        (no_disc_pattern, False),
-        (old_pattern, True),
-        (snnn_pattern, False)
-    ]
-    for pat, auto_assign in patterns_to_try:
-        track_entries = try_pattern(pat, auto_assign_disc=auto_assign)
-        for entry in track_entries:
-            print(entry)
-        print(f"{pat=} {n_files=}")
-        if track_entries and len(track_entries) == n_files and tracks_in_order(track_entries):
-            logging.info(f"Pattern {pat.pattern} produced valid results.")
-            mapping = {flac_files[i]: track_entries[i] for i in range(n_files)}
-            return mapping
-
-    # If none of the first loops yielded any results (i.e. all empty), don't perform a merged loop.
-    if (not try_pattern(new_pattern) and not try_pattern(no_disc_pattern)
-            and not try_pattern(old_pattern) and not try_pattern(snnn_pattern)):
-        logging.error("None of the individual patterns produced any track entries.")
-        return {}
-
-    # Fourth (merged) loop: try each pattern in order on each line.
-    track_entries = []
-    auto_disc = 1
-    prev_auto_track = None
-    for line in lines:
-        m = new_pattern.match(line)
-        if m:
-            disc = int(m.group(1))
-            track = int(m.group(2))
-            title = clean_track_name(m.group(3).strip())
-            track_entries.append((disc, f"{track:02d}", title))
-            continue
-        m = no_disc_pattern.match(line)
-        if m:
-            disc = 1
-            track = int(m.group(1))
-            title = clean_track_name(m.group(2).strip())
-            track_entries.append((disc, f"{track:02d}", title))
-            continue
-        m = old_pattern.match(line)
-        if m:
-            track_number = int(m.group(1))
-            title = clean_track_name(m.group(2).strip())
-            if prev_auto_track is not None and track_number == 1:
-                auto_disc += 1
-            track_entries.append((auto_disc, f"{track_number:02d}", title))
-            prev_auto_track = track_number
-            continue
-        m = snnn_pattern.match(line)
-        if m:
-            value = m.group(1)
-            disc = int(value[0])
-            track = value[1:]
-            title = clean_track_name(m.group(2).strip())
-            track_entries.append((disc, track, title))
-            continue
-    b_inorder = tracks_in_order(track_entries)
-    if track_entries and len(track_entries) == n_files and b_inorder:
-        logging.info("Merged pattern produced valid results.")
-        mapping = {flac_files[i]: track_entries[i] for i in range(n_files)}
-        return mapping
-    else:
-        error_message = "Error:"
-        if len(track_entries) != n_files:
-            error_message = error_message + f"Number of track entries ({len(track_entries)}) does not match number of FLAC files ({n_files}). "
-        if not b_inorder:
-            error_message = error_message + f"Tracks are not in order. "
-        print(track_entries)
-        logging.error(error_message)
-        raise ValueError(error_message)
-
+                    track = value[1:]
+                    title = clean_track_name(m.group(2).strip())
+                    track_entries.append((disc, track, title))
+                    continue
+                #if len(track_entries) == len(flac_files):
+                #    break        
+            b_inorder = tracks_in_order(track_entries)
+            if track_entries and len(track_entries) == n_files and b_inorder:
+                logging.info("Merged pattern produced valid results.")
+                mapping = {flac_files[i]: track_entries[i] for i in range(n_files)}
+                return mapping
+            else:
+                error_message = "Error:"
+                if len(track_entries) != n_files:
+                    error_message = error_message + f"Number of track entries ({len(track_entries)}) does not match number of FLAC files ({n_files}). "
+                if not b_inorder:
+                    error_message = error_message + f"Tracks are not in order. "
+                print(track_entries)
+                logging.error(error_message)
+                raise ValueError(error_message)
+        except Exception as e:
+            print(f'Error: {e}')
 
 def add_line_numbers(file_path):
     """
@@ -385,6 +480,7 @@ def tag_flac_files_wrapper(track_mapping):
     """
     for flac_path, (disc, track, title) in track_mapping.items():
         logging.info(f"File: {flac_path} -> Disc {disc}, Track {track}: {title}")
+    
     tag_flac_files(track_mapping)
 
 
@@ -455,8 +551,10 @@ def main():
         except ValueError as e:
             logging.error(e)
             return
-
-        tag_flac_files_wrapper(track_mapping)
+        if track_mapping:
+            tag_flac_files_wrapper(track_mapping)
+        else:
+            logging.error(f"No Track Mapping for {directory}")
     else:
         logging.info(f"Files are already tagged in {directory}")
 
@@ -493,27 +591,103 @@ def clear_title_tag_in_folder(directory_path):
         except Exception as e:
             print(f"Error processing {flac_file}: {e}")
 
+def clear_song_specific_tags_in_folder(directory_path):
+    """
+    Clears the 'title' tag from all FLAC files in the specified folder.
+    For each file, if a "title" tag is present, it is removed and the file is saved.
 
+    :param directory_path: The path to the folder containing FLAC files.
+    """
+    if not os.path.isdir(directory_path):
+        print(f"Directory '{directory_path}' does not exist.")
+        return
+
+    # Get list of all FLAC files in the folder (non-recursive)
+    flac_files = glob(os.path.join(directory_path, "*.flac"))
+    
+    if not flac_files:
+        print("No FLAC files found in the directory.")
+        return
+
+    for flac_file in flac_files:
+        try:
+            audio = FLAC(flac_file)
+            if 'title' in audio or 'tracknumber' in audio or 'discnumber' in audio:
+                if 'title' in audio:
+                    del audio['title']
+                    print(f"Cleared title tag from: {flac_file}")
+                else:
+                    print(f"No title tag found in: {flac_file}")
+                if 'tracknumber' in audio:
+                    del audio['tracknumber']
+                    print(f"Cleared tracknumber tag from: {flac_file}")
+                else:
+                    print(f"No tracknumber tag found in: {flac_file}")  
+                if 'discnumber' in audio:
+                    del audio['discnumber']
+                    print(f"Cleared discnumber tag from: {flac_file}")
+                else:
+                    print(f"No discnumber tag found in: {flac_file}")                                                          
+                audio.save()
+            else:
+                print(f'No title, disc, or tracknumber tags found in: {flac_file}')
+        except Exception as e:
+            print(f"Error processing {flac_file}: {e}")
+
+            # if not existing_track:
+            #     audio["tracknumber"] = track
+            # if not existing_disc:
+            #     audio["discnumber"] = str(disc)
+
+def read_file_to_list(file_name):
+    """
+    Reads the specified text file and returns a list of its lines.
+    If the file name is a relative path, it's assumed to be relative to the current working directory.
+
+    :param file_name: The path to the text file (relative or absolute).
+    :return: A list of strings, where each string is a line from the file.
+    """
+    if not os.path.isabs(file_name):
+        file_path = os.path.join(os.getcwd(), file_name)
+    else:
+        file_path = file_name
+
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            lines = f.read().splitlines()
+        return lines
+    except Exception as e:
+        print(f"Error reading file {file_path}: {e}")
+        return []
 
 if __name__ == "__main__":
     import sys
     from pathlib import Path
-    dirname = r"M:\To_Tag\gd1960s"
+    #dirname = r"M:/To_Tag/gd1977"
     needfixing = []
-    folderlist = [Path(f).as_posix() for f in os.scandir(dirname) if f.is_dir()]
-    #folderlist = [r'X:\Downloads\_FTP\gdead.1990.project\gd1990-07-19.147777.sbd-UltraMatrix-cm.pearson.miller.t-flac16' ]
-    #folderlist = read_file_to_list()
+    #folderlist = [Path(f).as_posix() for f in os.scandir(dirname) if f.is_dir()]
+    folderlist = [
+          r'M:\To_Tag\gd1973\gd1973-03-22.167022.sbd.GEMS.patched.sirmick.fixed.flac16'
+         ]
+    #folderlist = read_file_to_list('untaggged_list.txt')
     for fldr in folderlist:
+        fldr = Path(fldr).as_posix()
         sys.argv = [
             "flac_tagging.py",                 # script name (dummy)
             #
-            fldr
+            fldr.strip()
             #"--add-line-numbers", "/path/to/your/textfile.txt"  # optional argument
         ]
+        #clear_song_specific_tags_in_folder(fldr)
         #clear_title_tag_in_folder(fldr)
-        clear_title_tag_in_folder(fldr)
+        folder_only = Path(fldr).name
+        print(f'{folder_only}')
+            #problem_folders.append(folder_only)
+        #if shnid:
+        #    save_text_file(shnid,fldr)          
         main()
         if not all_flac_tagged(fldr) and len(folderlist) > 1:
+          
             needfixing.append(fldr)
 
     for x in needfixing:

@@ -2,6 +2,7 @@ import sqlite3
 import logging
 import datetime
 import csv
+import os
 
 class SQLiteEtreeDB:
     def __init__(self, db_path="db/etree_tag_db.db", log_level=logging.ERROR):
@@ -741,42 +742,55 @@ class SQLiteEtreeDB:
         except sqlite3.Error as e:
             print(f"An error occurred while vacuuming the database: {e}")
 
-    def get_table_sizes(self):
-        """
-        Returns a dictionary mapping each table (or index) name to its size in bytes,
-        using the dbstat virtual table. This function first enables extension loading
-        and then attempts to load the 'dbstat' extension. If that fails or the dbstat table
-        is not available, an error is printed.
 
-        :param db_path: Path to the SQLite database file.
-        :return: Dictionary { table_name: size_in_bytes, ... } or an empty dict on error.
+
+    def dump_sqlite_to_csv(db_path, folder='db/extract'):
         """
-        try:
-            self.conn.enable_load_extension(True)
-        except sqlite3.Error as e:
-            print(f"Error enabling load extensions to {self.db_path}: {e}")
-            return {}
+        Dumps all tables from the given SQLite database to CSV files.
+        Each CSV file is named after its table (e.g., 'table_name.csv') and
+        includes a header row with column names. Optionally, CSV files can be
+        saved into a specified folder (absolute or relative path).
+
+        Args:
+            db_path (str): Path to the SQLite database file.
+            folder (str, optional): Directory where CSV files will be saved.
+                                    If provided, the folder will be created if it doesn't exist.
+        """
+        # If a folder is provided, ensure it exists
+        if folder:
+            os.makedirs(folder, exist_ok=True)
+
+        # Connect to the SQLite database
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        # Retrieve the list of table names
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        tables = cursor.fetchall()
+
+        for table in tables:
+            table_name = table[0]
+            csv_filename = f"{table_name}.csv"
+            csv_filepath = os.path.join(folder, csv_filename) if folder else csv_filename
+
+            # Query all rows from the table
+            cursor.execute(f"SELECT * FROM {table_name}")
+            rows = cursor.fetchall()
+
+            # Get column headers from cursor.description
+            headers = [description[0] for description in cursor.description]
+
+            # Write the data to a CSV file
+            with open(csv_filepath, "w", newline='', encoding="utf-8") as csv_file:
+                writer = csv.writer(csv_file)
+                writer.writerow(headers)  # Write header row
+                writer.writerows(rows)    # Write all table rows
+
+            print(f"Exported table '{table_name}' to '{csv_filepath}'")
         
-        # Attempt to load the dbstat extension.
-        try:
-            # On some systems you might need to provide the full path to the extension
-            # For example: conn.load_extension("/usr/lib/sqlite3/dbstat")
-            self.conn.load_extension("dbstat")
-        except sqlite3.Error as e:
-            print("Could not load dbstat extension; your SQLite version may not support it or it is not installed.")
-            print("SQLite error:", e)
-            return {}
+        # Close the database connection
+        conn.close()
 
-        try:
-            cursor = self.conn.execute(
-                "SELECT name, SUM(pgsize) AS size FROM dbstat GROUP BY name ORDER BY size DESC;"
-            )
-            table_sizes = {row[0]: row[1] for row in cursor}
-        except sqlite3.Error as e:
-            print("Error querying dbstat:", e)
-            table_sizes = {}
-
-        return table_sizes
 
 class ChecksumFile:
     def __init__(self,etreedb:SQLiteEtreeDB,md5key:int):
@@ -806,7 +820,8 @@ class EtreeRecording:
         self.date = None
         if details is None:
             self.date = None  # or set a default value / log a warning
-            print(f"No matching details found for match: {self.id}")
+            logging.error(f"No event details found for match: {self.id}")
+            raise ValueError(f"No event details found for match: {self.id}")
         else:
             self.date = details[0]        
         # if details:

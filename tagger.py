@@ -140,11 +140,14 @@ class ConcertTagger:
         self.errormsg = None
         if self.NoMatch == False:
             try:
-                self.artworkpath = self._find_artwork('gd',self.etreerec.date)
+                if self.etreerec.date:
+                    self.artworkpath = self._find_artwork('gd',self.etreerec.date)
             except Exception as e:
-                print(f'Exception: {e} for {self.folderpath.as_posix()}')
-                #raise Exception(f'ERROR:{e}')
+                logging.error(f'Exception: {e} in _find_artwork for {self.folderpath.as_posix()}')
+                print(f'Exception: {e} in _find_artwork for {self.folderpath.as_posix()}')
                 self.errormsg = f'No Matching recording found in database for folder {self.folderpath.as_posix()}'
+                raise Exception(f'{e} in _find_artwork for {self.folderpath.as_posix()}')
+                
         else:
             logging.error(f'No Matching recording found in database for folder {self.folderpath.as_posix()}')
             self.errormsg = f'No Matching recording found in database for folder {self.folderpath.as_posix()}'
@@ -270,6 +273,7 @@ class ConcertTagger:
                     name = file_name
                     success = False
                     error = str(e)
+                    logging.error(f"Multithreaded _tag_artwork_for_file_thread call: {e}")
                 #if success:
                 #    print(f"[OK]   {name}")
                 #else:
@@ -281,9 +285,10 @@ class ConcertTagger:
         album = f'{self.etreerec.date} {self.etreerec.etreevenue} {'('+self.folder.recordingtype+') ' if self.folder.recordingtype else ''}{'['+str(self.folder.musicfiles[0].audio.info.bits_per_sample)+'-'+
                                                                    str(self.folder.musicfiles[0].audio.info.sample_rate).rstrip('0')+
                                                                    '] ' if self.folder.musicfiles and str(self.folder.musicfiles[0].audio.info.bits_per_sample) != '16' else ''}{'('+str(self.etreerec.id)+')'}'
-        print(f'Tagging {album} in {self.folderpath.as_posix()}')
+        print(f'{album=}')
         if not self.etreerec.tracks:
-            logging.error(f'Unable to tag tracks for folder: {self.folderpath.as_posix()}')
+            print(f'ERROR: Unable to tag track names. No Metadata found in {self.db.db_path} for {self.folderpath.as_posix()}')
+            logging.error(f'No track metadata found in {self.db.db_path} for: {self.folderpath.as_posix()}')
         logging.info(f'Tagging {album} in {self.folderpath.as_posix()}')
         genretag = None
         if self.etreerec.date:
@@ -327,42 +332,56 @@ class ConcertTagger:
         for concert_folder in concert_folders:
             currentcount = currentcount + 1
             print("------------------------------------------------------------------------------")
-            print(f"Processing {currentcount}/{folder_count} tagging: {Path(concert_folder).name}")
+            print(f"Processing ({currentcount}/{folder_count}): {Path(concert_folder).name}")
             try:
+            #if 1==1:
                 tagger = ConcertTagger(concert_folder, config, etree_db)
                 if not tagger.errormsg:
                     tagger.tag_album()
                     tagger.tag_artwork()
+                else:
+                    logging.error (f'tagger.errormsg: {e}')
             except Exception as e:
+            #else:
                 logging.error(f'Error Processing folder {concert_folder}')
 
 # Example usage:
 if __name__ == "__main__":
     from time import perf_counter
     start_time = perf_counter()
-    logfilename = 'tagalog.log' 
-    logging.basicConfig(filename=logfilename,level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
+    logfilename = 'tag_log.log' 
+    logging.basicConfig(filename=logfilename,level=logging.WARN, format="%(asctime)s %(levelname)s: %(message)s")
     config_file = os.path.join(os.path.dirname(__file__),"config.toml")
     config = load_config(config_file)
 
-    #if using a dingle folder put it into a list     
-    #concert_folders = [
-    #    r"X:\Downloads\_FTP\gdead.1991.project\gd1991-05-12.31962.sbd.miller.sbeok.t-flac16"
-    #]
+
+#these examples are paths to a folder containing show folders immediately below them. 
+    #parentfolder = r'M:\To_Tag\gd1995'
+    etreedb = SQLiteEtreeDB(r'db/etree_scrape.db') #make sure this is outside the loop called in the below function
+    concert_folders = []
+    # parentofparents =r'M:/To_Tag'
+    # parentlist = sorted([f.path.replace('\\','/') for f in os.scandir(parentofparents) if f.is_dir()])
+    # for parentfolder in parentlist:
+    # #dirnm = r'M:/To_Tag/gd1977'
+    #     if parentfolder.lower().endswith("fail"): 
+    #         continue
+    #     concert_folders.extend(sorted([f.path.replace('\\','/') for f in os.scandir(parentfolder) if f.is_dir()]))
+
+    #parentfolder = r'M:\To_Tag\gd1984'
+    #concert_folders = sorted([f.path.replace('\\','/') for f in os.scandir(parentfolder) if f.is_dir()])
     
-    #these examples are paths to a folder containing show folders immediately below them. 
-    parentfolderpath = r'M:\To_Tag\gd1983'
-    #parentfolderpath = r'X:\Downloads\_FTP\gdead.1983.project'
-    
+    #parentfolderpath = r'X:\Downloads\_FTP\gdead.1982.project'
+#if using a dingle folder put it into a list     
+    concert_folders = [
+        r"X:\Downloads\_FTP\gdead.1968.project\gd1968-10-10.4513.sbd.miller-ladner.sbeok.t-flac16"
+    ]    
 
 
-    parentfolder = Path(parentfolderpath).as_posix()
-    #concert_folders must be a list of folders that contain folders. Don't pass wht parent directory, it won't be good
+    #parentfolder = Path(parentfolderpath).as_posix()
+    #concert_folders must be a list of folders that contain folders. Don't pass without parent directory, it won't be good
     #TODO, add some type of check when scanning the first folder
     #take only one level of directories from the parent folder
-    concert_folders = sorted([f.path.replace('\\','/') for f in os.scandir(parentfolder) if f.is_dir()]) 
-    
-    etreedb = SQLiteEtreeDB(db_path="db/etree_tag_dbv2.db") #make sure this is outside the loop called in the below function
+    #concert_folders = sorted([f.path.replace('\\','/') for f in os.scandir(parentfolder) if f.is_dir()]) 
     ConcertTagger.tag_shows(concert_folders,etreedb,config)
     
     etreedb.close
