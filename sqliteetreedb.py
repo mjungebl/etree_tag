@@ -104,7 +104,10 @@ class SQLiteEtreeDB:
             artists_data = [
                 (2, 'Grateful Dead'),
                 (4, 'Phish'),
-                (12, 'Garcia')
+                (12, 'Garcia'),
+                (847,'Grateful Dead Compilations'),
+                (28494,'Grateful Dead Interviews'),
+                (8515,'Pigpen')
             ]
             self.cursor.executemany("INSERT OR REPLACE INTO artists (artistid, ArtistName) VALUES (?, ?);", artists_data)
 
@@ -744,7 +747,7 @@ class SQLiteEtreeDB:
 
 
 
-    def dump_sqlite_to_csv(db_path, folder='db/extract'):
+    def dump_sqlite_to_csv(self, folder='db/extract'):
         """
         Dumps all tables from the given SQLite database to CSV files.
         Each CSV file is named after its table (e.g., 'table_name.csv') and
@@ -885,7 +888,7 @@ class Track:
         self.shnid = shnid
         self.disc = disc_number
         self.tracknum = track_number
-        self.title = title
+        self.title = title_clean
         self.fingerprint = fingerprint
         self.bit_depth = bit_depth
         self.frequency = frequency
@@ -893,17 +896,18 @@ class Track:
         self.channels = channels
         self.filename = filename
         self.md5key = md5key
-        self.title_clean = title_clean
+        #self.title_clean = title_clean
         self.gazinta = gazinta
         self.bitabbrev = bit_depth+'-'+frequency.rstrip("0")
 
 
 if __name__ == "__main__":
-    db = SQLiteEtreeDB(db_path="db/etree_tag_dbv2.db",log_level=logging.INFO)  # Change log level as needed
+    db_path="db/etree_scrape.db"
+    db = SQLiteEtreeDB(db_path,log_level=logging.INFO)  # Change log level as needed
     #rec = EtreeRecording(db,124439)
     #rec.build_info_file()  #only works if the track metadata is populated. 
     #db.cursor.execute('SELECT COUNT(*) FROM track_metadata;')
     #count = db.cursor.fetchone()[0]
     #print(f'{count=}')
-    
+    db.dump_sqlite_to_csv()
     db.close()
