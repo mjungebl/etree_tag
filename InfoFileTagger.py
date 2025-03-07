@@ -9,7 +9,8 @@ from datetime import datetime
 
 
 def is_valid_date(date_str):
-    formats = ['%y-%m-%d', '%Y-%m-%d', '%m-%d-%Y', '%m-%d-%y']
+    formats = ['%y-%m-%d', '%Y-%m-%d', '%m-%d-%Y', '%m-%d-%y','%y.%m.%d', '%Y.%m.%d', '%m.%d.%Y', '%m.%d.%y'
+               ,'%y/%m/%d', '%Y/%m/%d', '%m/%d/%Y', '%m/%d/%y']
     #print(f'{date_str=}')
     for fmt in formats:
         try:
@@ -65,6 +66,8 @@ def clean_track_name(title):
     title = re.sub(r'\b\d{1,2}:\d{2}(?:\.\d{1,3})?\b', '', title)
     # Remove all asterisk characters.
     title = title.replace('*', '')
+    title = title.replace(';', '')
+    title = title.replace('%', '')
     # Remove a leading "->" or ">" with optional whitespace.
     title = re.sub(r'^\s*(->|>)\s*', '', title)
     #Encore
@@ -208,28 +211,46 @@ def parse_info_file(directory_path):
         return {}
 
     # Identify the info file.
+    #info_files = [f for f in os.listdir(directory_path)
+    #              if f.endswith(".txt") and re.match(r"^[^.]+\.\d+\.txt$", f)]
+    #if not info_files:
+     #   logging.warning("No info file with shnid found in the directory, checking for a txt file")
     info_files = [f for f in os.listdir(directory_path)
-                  if f.endswith(".txt") and re.match(r"^[^.]+\.\d+\.txt$", f)]
-    if not info_files:
-        logging.warn("No info file with shnid found in the directory, checking for a txt file")
-        info_files = [f for f in os.listdir(directory_path)
                     if f.endswith(".txt")]    
-
+    # print('-------------------------------------------------------------------------------')
+    # for info in info_files:
+    #     print(info)
     if not info_files:
         logging.error("No info file found in the directory.")
         return {}
     #if len(info_files) > 1:
     #    logging.warning("Multiple info files found. Using the first one found.")
+    info_file_cnt = len(info_files)
+    curr_infofile = 0
     for info_file in info_files:
+        curr_infofile = curr_infofile + 1
         #info_file = info_files[0]
         try:
             info_file_path = os.path.join(directory_path, info_file)
             logging.info(f"Using info file: {info_file_path}")
 
         # Read nonempty lines.
+        
             try:
-                with open(info_file_path, "r", encoding="utf-8") as f:
-                    lines = [line.strip() for line in f if line.strip()]
+                #with open(info_file_path, "r", encoding="utf-8") as f:
+                #lines = [line.strip() for line in f if line.strip()]
+                    for enc in ['utf-8', 'cp1252', 'latin1', 'utf-16']:
+                        try:
+                            with open(info_file_path, "r", encoding=enc) as f:
+                                lines = [line.strip() for line in f if line.strip()]
+                            print(f"Successfully read with encoding: {enc}")
+                            break
+                        except UnicodeDecodeError:
+                            continue
+                    else:
+                        print("Failed to decode the file with the attempted encodings.")                
+                    
+                    #lines = [line.strip() for line in content if line.strip()]
             except Exception as e:
                 logging.error(f"Error reading info file {info_file_path}: {e}")
                 return {}
@@ -328,6 +349,10 @@ def parse_info_file(directory_path):
                 auto_disc = 1
                 prev_auto_track = None
                 for line in lines:
+                    if 'discs audio' in line.lower():
+                        continue
+                    if line.strip().lower() in ('24 bit', '16 bit'):
+                        continue
                     if is_valid_date(line.split()[0].strip()):
                         continue
                     m = pattern.match(line)
@@ -386,7 +411,8 @@ def parse_info_file(directory_path):
             if (not try_pattern(new_pattern) and not try_pattern(no_disc_pattern)
                     and not try_pattern(old_pattern) and not try_pattern(snnn_pattern)):
                 logging.error("None of the individual patterns produced any track entries.")
-                return {}
+                if info_file_cnt == curr_infofile:
+                    return {}
 
             # Fourth (merged) loop: try each pattern in order on each line.
             track_entries = []
@@ -432,16 +458,21 @@ def parse_info_file(directory_path):
                 mapping = {flac_files[i]: track_entries[i] for i in range(n_files)}
                 return mapping
             else:
+                logging.error(f'Problem in {curr_infofile}:')
                 error_message = "Error:"
                 if len(track_entries) != n_files:
                     error_message = error_message + f"Number of track entries ({len(track_entries)}) does not match number of FLAC files ({n_files}). "
                 if not b_inorder:
                     error_message = error_message + f"Tracks are not in order. "
-                print(track_entries)
+                    for track in track_entries:
+                        print (track)
+                #print(track_entries)
                 logging.error(error_message)
-                raise ValueError(error_message)
+                if info_file_cnt == curr_infofile:
+                    raise ValueError(error_message)
         except Exception as e:
             print(f'Error: {e}')
+            logging.error({e} in {info_file})
 
 def add_line_numbers(file_path):
     """
@@ -667,7 +698,7 @@ if __name__ == "__main__":
     needfixing = []
     #folderlist = [Path(f).as_posix() for f in os.scandir(dirname) if f.is_dir()]
     folderlist = [
-          r'M:\To_Tag\gd1973\gd1973-03-22.167022.sbd.GEMS.patched.sirmick.fixed.flac16'
+          r'X:\Downloads\_FTP\gdead.1972.project\gd1972-09-28.26933.sbd.patched-chrisl.sbeok.flac16'
          ]
     #folderlist = read_file_to_list('untaggged_list.txt')
     for fldr in folderlist:

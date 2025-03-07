@@ -359,6 +359,14 @@ if __name__ == "__main__":
     #parentfolder = r'M:\To_Tag\gd1995'
     etreedb = SQLiteEtreeDB(r'db/etree_scrape.db') #make sure this is outside the loop called in the below function
     concert_folders = []
+
+
+    parentfolderpath = r'X:/Downloads/_FTP'
+    parentfolders = sorted([f.path.replace('\\','/') for f in os.scandir(parentfolderpath) if f.is_dir()])
+    for folder in parentfolders:
+        if Path(folder).name.startswith('gdead') and folder.endswith('project'): #and '_' not in Path(folder).name:
+            concert_folders.extend(sorted([f.path.replace('\\','/') for f in os.scandir(folder) if f.is_dir()]))  
+
     # parentofparents =r'M:/To_Tag'
     # parentlist = sorted([f.path.replace('\\','/') for f in os.scandir(parentofparents) if f.is_dir()])
     # for parentfolder in parentlist:
@@ -367,14 +375,14 @@ if __name__ == "__main__":
     #         continue
     #     concert_folders.extend(sorted([f.path.replace('\\','/') for f in os.scandir(parentfolder) if f.is_dir()]))
 
-    #parentfolder = r'M:\To_Tag\gd1984'
+    #parentfolder = r'X:\Downloads\_FTP\gdead.9999.updates'
     #concert_folders = sorted([f.path.replace('\\','/') for f in os.scandir(parentfolder) if f.is_dir()])
     
     #parentfolderpath = r'X:\Downloads\_FTP\gdead.1982.project'
 #if using a dingle folder put it into a list     
-    concert_folders = [
-        r"X:\Downloads\_FTP\gdead.1968.project\gd1968-10-10.4513.sbd.miller-ladner.sbeok.t-flac16"
-    ]    
+    #concert_folders = [
+    #    r"X:\Downloads\_FTP\gdead.1968.project\gd1968-10-10.4513.sbd.miller-ladner.sbeok.t-flac16"
+    #]    
 
 
     #parentfolder = Path(parentfolderpath).as_posix()
