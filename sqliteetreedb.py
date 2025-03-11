@@ -223,23 +223,66 @@ class SQLiteEtreeDB:
         except sqlite3.Error as e:
             logging.error(f"SQLite error in store_signatures: {e}")
 
+    # def store_artist_events(self, records):
+    #     """Stores or updates artist event records in 'shnlist' table."""
+    #     try:
+    #         for row in records:
+    #             shnid = int(row[5])
+    #             self.cursor.execute("""
+    #                 INSERT INTO shnlist (Date, VenueSource, CircDateAddedSource, ChecksumsSource, Source, shnid,artist_id)
+    #                 VALUES (?, ?, ?, ?, ?, ?, ?)
+    #                 ON CONFLICT(shnid) DO UPDATE SET
+    #                     Date=excluded.Date,
+    #                     VenueSource=excluded.VenueSource,
+    #                     CircDateAddedSource=excluded.CircDateAddedSource,
+    #                     ChecksumsSource=excluded.ChecksumsSource,
+    #                     Source=excluded.Source,
+    #                     artist_id=excluded.artist_id
+    #             """, row)
+    #             logging.info(f"Added Shnid: {shnid} to database")
+    #         self.conn.commit()
+
+    #     except sqlite3.Error as e:
+    #         logging.error(f"SQLite error in store_artist_events: {e}")
+
     def store_artist_events(self, records):
         """Stores or updates artist event records in 'shnlist' table."""
+        shnid = None
         try:
             for row in records:
                 shnid = int(row[5])
+                venuesource = row[1]
+                if venuesource:
+                    # Split the VenueSource by commas and remove extra whitespace
+                    parts = [part.strip() for part in venuesource.split(',')]
+                    if len(parts) >= 2:
+                        # Last two elements are considered as City
+                        city = ', '.join(parts[-2:])
+                        # Everything before the last two elements is considered as Venue
+                        venue = ', '.join(parts[:-2])
+                    else:
+                        # If there's less than 2 parts, use the entire string as Venue
+                        venue = venuesource
+                        city = ""
+                row.append(venue)
+                row.append(city)                 
                 self.cursor.execute("""
-                    INSERT INTO shnlist (Date, VenueSource, CircDateAddedSource, ChecksumsSource, Source, shnid,artist_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO shnlist (Date, VenueSource, CircDateAddedSource, ChecksumsSource, Source, shnid,artist_id,Venue,City)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(shnid) DO UPDATE SET
                         Date=excluded.Date,
                         VenueSource=excluded.VenueSource,
                         CircDateAddedSource=excluded.CircDateAddedSource,
                         ChecksumsSource=excluded.ChecksumsSource,
                         Source=excluded.Source,
-                        artist_id=excluded.artist_id
+                        artist_id=excluded.artist_id,
+                        Venue=excluded.Venue,
+                        City=excluded.City
                 """, row)
-                logging.info(f"Added Shnid: {shnid} to database")
+                if shnid:
+                    logging.info(f"Added Shnid: {shnid} to database")
+                else:
+                    logging.error(f"No shnid found in records")                
             self.conn.commit()
 
         except sqlite3.Error as e:
@@ -270,10 +313,10 @@ class SQLiteEtreeDB:
 
     def get_shnid_details(self, shnid):
         """
-            Returns a tuple containing (Date,VenueSource,Source,artist_id) for a given shnid
+            Returns a tuple containing (Date,VenueSource,Source,artist_id,Venue, City) for a given shnid
         """
         try:
-            self.cursor.execute("SELECT Date,VenueSource,Source,artist_id FROM shnlist WHERE shnid = ?", (shnid,))
+            self.cursor.execute("SELECT Date,VenueSource,Source,artist_id,Venue, City FROM shnlist WHERE shnid = ?", (shnid,))
             row = self.cursor.fetchone()
             return row if row else None
 
@@ -834,6 +877,8 @@ class EtreeRecording:
             self.etreevenue = details[1]
             self.source = details[2]
             self.artist = etreedb.get_artist_name(details[3])
+            self.venue = details[4]
+            self.city = details[5]
         self._checksums = None
         self.db = etreedb
         self._tracks = None
@@ -909,5 +954,6 @@ if __name__ == "__main__":
     #db.cursor.execute('SELECT COUNT(*) FROM track_metadata;')
     #count = db.cursor.fetchone()[0]
     #print(f'{count=}')
+    db.parse_venuesource()
     db.dump_sqlite_to_csv()
     db.close()

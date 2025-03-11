@@ -10,6 +10,39 @@ from tqdm import tqdm
 #import multiprocessing
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import shutil
+"""
+This script provides functionality for tagging FLAC files with metadata and artwork using multithreading. 
+It includes classes and functions to load configuration settings, find matching recordings, and tag files with album information and artwork.
+Classes:
+    ConcertTagger: A class to handle tagging of concert recordings with metadata and artwork.
+Functions:
+    load_config(config_path: str) -> dict:
+    _tag_file_thread(args):
+        Worker function to add artwork and metadata to a single FLAC file using threads.
+    _tag_artwork_for_file_thread(args):
+    ConcertTagger.__init__(self, concert_folder: str, config: dict, db: SQLiteEtreeDB):
+    ConcertTagger._find_artwork(self, artist_abbr: str, concert_date: str):
+    ConcertTagger._find_matching_recording(self):
+        Find a matching recording in the database based on checksums.
+    ConcertTagger.tag_artwork(self, clear_existing: bool = False, num_threads: int = None):
+    ConcertTagger.tag_album(self, clear_existing: bool = True):
+        Tag FLAC files with album information.
+    ConcertTagger.tag_files(self, clear_existing_artwork: bool = False, clear_existing_tags: bool = True, num_threads: int = None):
+        Add artwork and metadata to all FLAC files using multithreading.
+    ConcertTagger.tag_shows(concert_folders: list, etree_db: SQLiteEtreeDB, config, clear_existing_artwork: bool = False, clear_existing_tags: bool = False):
+        Process and tag multiple concert folders with metadata and artwork.
+Example usage:
+        # Load configuration and initialize database
+        config_file = os.path.join(os.path.dirname(__file__), "config.toml")
+        etreedb = SQLiteEtreeDB(r'db/etree_scrape.db')
+        # Define concert folders to process
+        concert_folders = sorted([f.path.replace('\\', '/') for f in os.scandir(parentfolder) if f.is_dir()])
+        # Tag shows
+            etreedb, config,
+            clear_existing_artwork=False,
+            clear_existing_tags=True
+"""
+
 
 def load_config(config_path: str) -> dict:
     """
@@ -54,7 +87,93 @@ def load_config(config_path: str) -> dict:
         print(f"Error loading configuration: {e}")
         raise    
 
+def _tag_file_thread(args):
+    """
+    Worker function to add artwork to a single FLAC file using threads.
 
+    Args:
+        args (tuple): Contains:
+        - file_path (str): Full path to the FLAC file.
+        - file_name (str): File name (for logging).
+        - artwork_path (str): Full path to the artwork image.
+        - clear_existing (bool): If True, clear any existing artwork before adding.
+        
+    Returns:
+        tuple: (file_name, success (bool), error (str or None))
+    """
+    #(file.path, file.name, artwork_path_str, clear_existing_artwork, clear_existing_tags,album, genretag, file.title, file.tracknum, file.disc, self.etreerec.artist)        
+    file_path, file_name, artwork_path, clear_existing_artwork, clear_existing_tags,album, genretag, artist, source,tracknum, disc, title = args
+    try:
+                
+        # Read artwork from disk.
+        try:
+            with open(artwork_path, "rb") as f:
+                image_data = f.read()
+        except Exception as e:
+            logging.error(f"Error reading artwork file {artwork_path}: {e}")
+            #return
+        # Open the FLAC file.
+        audio = FLAC(file_path)
+        if clear_existing_artwork and audio.pictures:
+            audio.clear_pictures()
+            logging.info(f"Cleared artwork from file: {file_name}")
+        #if not clear_existing_artwork and clear_existing_tags: 
+        #    artwork = audio.pictures[:]
+        # Clear all tags (this removes the Vorbis comments)
+        if clear_existing_tags:
+            for key in list(audio.keys()):
+                # Skip deleting the artwork if it appears as a tag.
+                if key.lower() == "metadata_block_picture":
+                    continue
+                del audio[key]
+            logging.info(f"Cleared tags from file: {file_name}")
+        
+        # Restore the artwork
+        #if not clear_existing_artwork and clear_existing_tags:
+        #    if artwork:
+        #        for pic in artwork:
+        #            audio.add_picture(pic)      
+        #    #audio.pictures = artwork        
+
+        if image_data:
+        # Create a Picture object.
+            pic = Picture()
+            pic.type = 3  # Cover (front)
+            pic.mime = "image/jpeg"  # Adjust if your artwork is in a different format.
+            pic.data = image_data
+
+            if not audio.pictures:
+                audio.add_picture(pic)
+                logging.info(f"Added artwork to file: {file_name}")
+            else:
+                logging.info(f"Artwork already exists in file: {file_name}")
+                #return (file_name, True, None)
+
+        audio["album"] = album
+        audio["artist"] = artist #may need an override here for the JGB type stuff
+        audio["albumartist"] = artist
+        if "album artist" in audio: #clear anything that might've already been there to clean up artist menu
+            del audio["album artist"]
+        audio["comment"] = source
+        if genretag:
+            audio["genre"] = genretag
+
+        #tracknum, disc, title
+        if title:
+        #print(f'Song details: {song_info.title} {song_info.disc} {song_info.tracknum}')
+            if title:
+                audio["title"] = title    # Track name
+            if disc:
+                audio["discnumber"] = disc                # Disc number (as a string)
+            if tracknum:
+                audio["tracknumber"] = tracknum               # Track number (as a string)
+        else:
+            logging.error(f"Error tagging song details {file_path}: No matching track data found in database")
+        audio.save()
+        return (file_name, True, None)
+    except Exception as e:
+        logging.error(f"Error tagging file {file_name}: {e}")
+        return (file_name, False, str(e))
 
 
 def _tag_artwork_for_file_thread(args):
@@ -296,7 +415,9 @@ class ConcertTagger:
             if len(self.etreerec.date) > 4:
                 genretag = f"gd{str(self.etreerec.date[0:4])}"
         if album:
+            
             for file in self.folder.musicfiles:
+                
                 try:
                     file.audio["album"] = album
                     file.audio["artist"] = self.etreerec.artist
@@ -306,10 +427,12 @@ class ConcertTagger:
                     file.audio["comment"] = self.etreerec.source
                     if genretag:
                         file.audio["genre"] = genretag
+                    print(file.checksum, self.etreerec.id)                        
                     if self.etreerec.tracks:
                         song_info =self.etreerec.get_track_by_checksum(file.checksum)
+                        
                         if song_info:
-                        #print(f'Song details: {song_info.title} {song_info.disc} {song_info.tracknum}')
+                            print(f'Song details: {song_info.title} {song_info.disc} {song_info.tracknum}')
                             if song_info.title:
                                 file.audio["title"] = song_info.title    # Track name
                             if song_info.disc:
@@ -323,8 +446,147 @@ class ConcertTagger:
                     logging.error(f"Error tagging file {file.path}: {e}")
         else:
             logging.info(f'Skipped tags: No Album generated for folder {self.folderpath.as_posix()}')
-    
-    def tag_shows(concert_folders:list, etree_db:SQLiteEtreeDB, config):
+
+
+
+
+    def tag_files(self, clear_existing_artwork: bool = False, clear_existing_tags: bool = True, num_threads: int = None):
+        """
+        Add artwork to all FLAC files using multithreading.
+
+        Args:
+            clear_existing_artwork (bool): If True, remove any existing artwork before adding the new image.
+                                    If False, add artwork only if no artwork is present.
+            clear_existing_tags (bool): If True, remove all tags from the files prior to adding tags. 
+            NOTE: false does not prevent tags from being overwritten if there is a new value found. It will clear everything                 
+            num_threads (int, optional): Number of threads to use. Defaults to os.cpu_count()-1.
+        """
+        if not self.artworkpath:
+            logging.warning("No artwork file found to tag.")
+            #return
+
+        artwork_path_str = str(self.artworkpath)
+        album = f'{self.etreerec.date} {self.etreerec.city} {'('+self.folder.recordingtype+') ' if self.folder.recordingtype else ''}{'['+str(self.folder.musicfiles[0].audio.info.bits_per_sample)+'-'+
+                                                                        str(self.folder.musicfiles[0].audio.info.sample_rate).rstrip('0')+
+                                                                        '] ' if self.folder.musicfiles and str(self.folder.musicfiles[0].audio.info.bits_per_sample) != '16' else ''}{'('+str(self.etreerec.id)+')'}'        
+        print(f'{album=}')
+        if not self.etreerec.tracks:
+            print(f'ERROR: Unable to tag track names. No Metadata found in {self.db.db_path} for {self.folderpath.as_posix()}')
+            logging.error(f'No track metadata found in {self.db.db_path} for: {self.folderpath.as_posix()}')
+        logging.info(f'Tagging {album} in {self.folderpath.as_posix()}')
+        genretag = None
+        if self.etreerec.date:
+            #todo: chenge this to something configurable and add other artists. 
+            if len(self.etreerec.date) > 4:
+                genretag = f"gd{str(self.etreerec.date[0:4])}"        
+        dest_file = os.path.join(self.folderpath.as_posix(), "folder.jpg")
+        if not os.path.exists(dest_file):
+            try:
+                shutil.copy2(artwork_path_str, dest_file)
+                logging.info(f"Copied artwork to {dest_file}")
+            except Exception as e:
+                logging.error(f"Error copying artwork: {e}")
+        else:
+            logging.info(f"Artwork already exists at {dest_file}")        
+        # Build argument list using the files from your folder's musicfiles attribute.
+        if self.config["preferences"]["segue_string"]:
+            gazinta_abbrev = self.config["preferences"]["segue_string"]
+        else:
+            gazinta_abbrev = '>'
+        args_list = []
+        for file in self.folder.musicfiles:
+            song_info = self.etreerec.get_track_by_checksum(file.checksum)
+            #print(file.name, self.etreerec.id, [track.title for track in self.etreerec.tracks if track.fingerprint == file.checksum][0])
+            tracknum, disc, title = None, None, None
+            if song_info:
+                tracknum, disc, title = song_info.tracknum, song_info.disc,f'{song_info.title}{' ' + gazinta_abbrev if song_info.gazinta else ''}'
+            args_list.append((file.path, file.name, artwork_path_str, clear_existing_artwork, clear_existing_tags,
+             album, genretag, self.etreerec.artist, self.etreerec.source,tracknum, disc, title))
+            #print(song_info.title, song_info.gazinta)
+        
+        #for args in args_list:
+        #    print(args[1])
+        if num_threads is None:
+            cpu_count = os.cpu_count() or 1
+            num_threads = max(1, cpu_count - 1)
+        tickers = len(args_list)
+        pbar = tqdm(total=tickers, desc='Tagging')
+        with ThreadPoolExecutor(max_workers=num_threads) as executor:
+            futures = {executor.submit(_tag_file_thread, args): args[1] for args in args_list}
+            for future in as_completed(futures):
+                file_name = futures[future]
+                pbar.update(n=1)
+                try:
+                    name, success, error = future.result()
+                except Exception as e:
+                    name = file_name
+                    success = False
+                    error = str(e)
+                    logging.error(f"Multithreaded _tag_file_thread call: {e}")
+                #if success:
+                #    print(f"[OK]   {name}")
+                #else:
+                #    print(f"[FAIL] {name} - {error}")
+
+    def tag_shows_debug(
+        concert_folders:list, 
+        etree_db:SQLiteEtreeDB, 
+        config,
+        clear_existing_artwork: bool = False, 
+        clear_existing_tags: bool = False
+    ):
+        """
+        Tags concert folders with metadata from the etree database.
+        Args:
+            concert_folders (list): List of paths to concert folders to be tagged.
+            etree_db (SQLiteEtreeDB): Instance of the SQLiteEtreeDB class for database access.
+            config: Configuration settings for tagging.
+            clear_existing_artwork (bool, optional): If True, existing artwork will be cleared before tagging. Defaults to False.
+            clear_existing_tags (bool, optional): If True, existing tags will be cleared before tagging. Defaults to False.
+        Raises:
+            Exception: If an error occurs during the tagging process, it will be logged.
+        """        
+        folder_count = len(concert_folders)
+        currentcount = 0
+        
+        print(f"Processing tags for {folder_count} folders.")
+        for concert_folder in concert_folders:
+            currentcount = currentcount + 1
+            print("------------------------------------------------------------------------------")
+            print(f"Processing ({currentcount}/{folder_count}): {Path(concert_folder).name}")
+            #try:
+            #if 1==1:
+            tagger = ConcertTagger(concert_folder, config, etree_db)
+            if not tagger.errormsg:
+                #tagger.tag_album()
+                tagger.tag_files(clear_existing_artwork,clear_existing_tags)
+            else:
+                logging.error (f'tagger.errormsg: {tagger.errormsg}')
+            #except Exception as e:
+            #else:
+                # if e:
+                #     logging.error(f'Error Processing folder {concert_folder} {e}')
+                # else:
+                #     logging.error(f'Error Processing folder {concert_folder}')
+
+    def tag_shows(
+        concert_folders:list, 
+        etree_db:SQLiteEtreeDB, 
+        config,
+        clear_existing_artwork: bool = False, 
+        clear_existing_tags: bool = False
+    ):
+        """
+        Tags concert folders with metadata from the etree database.
+        Args:
+            concert_folders (list): List of paths to concert folders to be tagged.
+            etree_db (SQLiteEtreeDB): Instance of the SQLiteEtreeDB class for database access.
+            config: Configuration settings for tagging.
+            clear_existing_artwork (bool, optional): If True, existing artwork will be cleared before tagging. Defaults to False.
+            clear_existing_tags (bool, optional): If True, existing tags will be cleared before tagging. Defaults to False.
+        Raises:
+            Exception: If an error occurs during the tagging process, it will be logged.
+        """        
         folder_count = len(concert_folders)
         currentcount = 0
         
@@ -337,52 +599,48 @@ class ConcertTagger:
             #if 1==1:
                 tagger = ConcertTagger(concert_folder, config, etree_db)
                 if not tagger.errormsg:
-                    tagger.tag_album()
-                    tagger.tag_artwork()
+                    #tagger.tag_album()
+                    tagger.tag_files(clear_existing_artwork,clear_existing_tags)
                 else:
-                    logging.error (f'tagger.errormsg: {e}')
+                    logging.error (f'tagger.errormsg: {tagger.errormsg}')
             except Exception as e:
             #else:
-                logging.error(f'Error Processing folder {concert_folder}')
+                if e:
+                    logging.error(f'Error Processing folder {concert_folder} {e}')
+                else:
+                    logging.error(f'Error Processing folder {concert_folder}')
 
 # Example usage:
 if __name__ == "__main__":
     from time import perf_counter
     start_time = perf_counter()
     logfilename = 'tag_log.log' 
-    logging.basicConfig(filename=logfilename,level=logging.WARN, format="%(asctime)s %(levelname)s: %(message)s")
+    logging.basicConfig(filename=logfilename,level=logging.WARNING, format="%(asctime)s %(levelname)s: %(message)s")
     config_file = os.path.join(os.path.dirname(__file__),"config.toml")
     config = load_config(config_file)
 
 
-#these examples are paths to a folder containing show folders immediately below them. 
-    #parentfolder = r'M:\To_Tag\gd1995'
     etreedb = SQLiteEtreeDB(r'db/etree_scrape.db') #make sure this is outside the loop called in the below function
     concert_folders = []
 
+# two level deep folder enumeration for processing
+    #parentofparents =r'M:/To_Tag'
+    parentofparents = r'Y:\Music\Grateful Dead'
+    parentlist = sorted([f.path.replace('\\','/') for f in os.scandir(parentofparents) if f.is_dir()])
+    for parentfolder in parentlist:
+        if parentfolder.lower().endswith("fail"): #addl filtering, exclude if the folder name ends with fail
+            continue
+        concert_folders.extend(sorted([f.path.replace('\\','/') for f in os.scandir(parentfolder) if f.is_dir()]))
 
-    parentfolderpath = r'X:/Downloads/_FTP'
-    parentfolders = sorted([f.path.replace('\\','/') for f in os.scandir(parentfolderpath) if f.is_dir()])
-    for folder in parentfolders:
-        if Path(folder).name.startswith('gdead') and folder.endswith('project'): #and '_' not in Path(folder).name:
-            concert_folders.extend(sorted([f.path.replace('\\','/') for f in os.scandir(folder) if f.is_dir()]))  
-
-    # parentofparents =r'M:/To_Tag'
-    # parentlist = sorted([f.path.replace('\\','/') for f in os.scandir(parentofparents) if f.is_dir()])
-    # for parentfolder in parentlist:
-    # #dirnm = r'M:/To_Tag/gd1977'
-    #     if parentfolder.lower().endswith("fail"): 
-    #         continue
-    #     concert_folders.extend(sorted([f.path.replace('\\','/') for f in os.scandir(parentfolder) if f.is_dir()]))
-
-    #parentfolder = r'X:\Downloads\_FTP\gdead.9999.updates'
-    #concert_folders = sorted([f.path.replace('\\','/') for f in os.scandir(parentfolder) if f.is_dir()])
+#single parent folder
+    # parentfolder = r'X:\Downloads\_FTP\gdead.1980.project'
+    # concert_folders = sorted([f.path.replace('\\','/') for f in os.scandir(parentfolder) if f.is_dir()])
     
-    #parentfolderpath = r'X:\Downloads\_FTP\gdead.1982.project'
-#if using a dingle folder put it into a list     
-    #concert_folders = [
-    #    r"X:\Downloads\_FTP\gdead.1968.project\gd1968-10-10.4513.sbd.miller-ladner.sbeok.t-flac16"
-    #]    
+
+#if using a single folder, or specific folders use a python list of path(s): 
+    # concert_folders = [
+    #       r"M:/To_Tag/gd1980/gd1980-05-06.99954.aud.morris.sbeok.flac1644"
+    # ]    
 
 
     #parentfolder = Path(parentfolderpath).as_posix()
@@ -390,8 +648,14 @@ if __name__ == "__main__":
     #TODO, add some type of check when scanning the first folder
     #take only one level of directories from the parent folder
     #concert_folders = sorted([f.path.replace('\\','/') for f in os.scandir(parentfolder) if f.is_dir()]) 
-    ConcertTagger.tag_shows(concert_folders,etreedb,config)
-    
+    ConcertTagger.tag_shows(
+        concert_folders,
+        etreedb,config,
+        clear_existing_artwork = False,
+        clear_existing_tags = True
+    )
+
+
     etreedb.close
     
     end_time = perf_counter()

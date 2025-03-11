@@ -3,13 +3,13 @@
 
 [preferences]
 # Set the year format for tags.
-# Valid options: "2-digit" or "4-digit"
-year_format = "4-digit"
+# Valid options: "YYYY" or "YY"
+year_format = "YYYY"
 segue_string = "->"
-soundboard_abbrev = "sbd"
-aud_abbrev = "aud"
-matrix_abbrev = "mtx"
-ultramatrix_abbrev = "ultramatrix"
+soundboard_abbrev = "SBD"
+aud_abbrev = "AUD"
+matrix_abbrev = "MTX"
+ultramatrix_abbrev = "Ultramatrix"
 [album_tag]
 # Toggle inclusion of optional components in the album tag.
 include_bitrate = true
@@ -21,7 +21,7 @@ include_city    = true
 # Valid values: "bitrate", "venue", "city", "shnid", "date"
 # Only include the components that are enabled above.
 order = ["date","city", "shnid","bitrate"]
-#use the below lists to add a string before or after each of the sections. Include any spaces that are desired. 
+#use the below lists to add a string before or after each of the sections above. Include any spaces that are desired. 
 prefix = ['','','(','[']
 suffix = ['','',')',']']
 #specify the directories to search for artwork in the order in which they should be searched order to search.
