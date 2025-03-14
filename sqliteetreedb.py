@@ -35,7 +35,7 @@ class SQLiteEtreeDB:
             self.cursor.execute('SELECT COUNT(*) FROM signatures;')
             count = self.cursor.fetchone()[0]
             if count == 0:
-                with open('db/csv/signatures.csv', 'r', newline='') as csvfile:
+                with open('db/csv/signatures.csv', 'r', newline='', encoding="utf-8") as csvfile:
                     reader = csv.DictReader(csvfile)  # Uses the first row as headers
                     rows = []
                     for row in reader:
@@ -64,7 +64,7 @@ class SQLiteEtreeDB:
             self.cursor.execute('SELECT COUNT(*) FROM shnlist;')
             count = self.cursor.fetchone()[0]
             if count == 0:
-                with open('db/csv/shnlist.csv', 'r', newline='') as csvfile:
+                with open('db/csv/shnlist.csv', 'r', newline='', encoding="utf-8") as csvfile:
                     reader = csv.DictReader(csvfile)  # Uses the first row as headers
                     rows = []
                     for row in reader:
@@ -84,7 +84,7 @@ class SQLiteEtreeDB:
             self.cursor.execute('SELECT COUNT(*) FROM title_transformations;')
             count = self.cursor.fetchone()[0]            
             if count == 0:
-                with open('db/csv/title_transformations.csv', 'r', newline='') as csvfile:
+                with open('db/csv/title_transformations.csv', 'r', newline='', encoding="utf-8") as csvfile:
                     reader = csv.DictReader(csvfile)  # Uses the first row as headers
                     rows = []
                     for row in reader:
@@ -132,7 +132,7 @@ class SQLiteEtreeDB:
             self.cursor.execute('SELECT COUNT(*) FROM track_metadata;')
             count = self.cursor.fetchone()[0]
             if count == 0:
-                with open('db/csv/track_metadata.csv', 'r', newline='') as csvfile:
+                with open('db/csv/track_metadata.csv', 'r', newline='', encoding="utf-8") as csvfile:
                     reader = csv.DictReader(csvfile)  # Uses the first row as headers
                     rows = []
                     for row in reader:
@@ -160,7 +160,7 @@ class SQLiteEtreeDB:
             self.cursor.execute('SELECT COUNT(*) FROM checksum_files;')
             count = self.cursor.fetchone()[0]
             if count == 0:
-                with open('db/csv/checksum_files.csv', 'r', newline='') as csvfile:
+                with open('db/csv/checksum_files.csv', 'r', newline='', encoding="utf-8") as csvfile:
                     reader = csv.DictReader(csvfile)  # Uses the first row as headers
                     rows = []
                     for row in reader:
