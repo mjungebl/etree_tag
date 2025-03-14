@@ -106,19 +106,23 @@ def _tag_file_thread(args):
     try:
                 
         # Read artwork from disk.
-        try:
-            with open(artwork_path, "rb") as f:
-                image_data = f.read()
-        except Exception as e:
-            logging.error(f"Error reading artwork file {artwork_path}: {e}")
+        if artwork_path:
+            try:
+                with open(artwork_path, "rb") as f:
+                    image_data = f.read()
+            except Exception as e:
+                logging.error(f"Error reading artwork file {artwork_path}: {e}")
+        else:
+            image_data = None
+            logging.info("No artwork file found to tag.")
             #return
         # Open the FLAC file.
         audio = FLAC(file_path)
-        if clear_existing_artwork and audio.pictures:
+        if clear_existing_artwork and audio.pictures and image_data:
+            # Clear existing artwork if specified and we have a new image.
             audio.clear_pictures()
             logging.info(f"Cleared artwork from file: {file_name}")
-        #if not clear_existing_artwork and clear_existing_tags: 
-        #    artwork = audio.pictures[:]
+
         # Clear all tags (this removes the Vorbis comments)
         if clear_existing_tags:
             for key in list(audio.keys()):
@@ -127,27 +131,19 @@ def _tag_file_thread(args):
                     continue
                 del audio[key]
             logging.info(f"Cleared tags from file: {file_name}")
-        
-        # Restore the artwork
-        #if not clear_existing_artwork and clear_existing_tags:
-        #    if artwork:
-        #        for pic in artwork:
-        #            audio.add_picture(pic)      
-        #    #audio.pictures = artwork        
 
         if image_data:
-        # Create a Picture object.
-            pic = Picture()
-            pic.type = 3  # Cover (front)
-            pic.mime = "image/jpeg"  # Adjust if your artwork is in a different format.
-            pic.data = image_data
-
+            # Add new artwork if it doesn't already exist.
             if not audio.pictures:
+            # Create a Picture object.
+                pic = Picture()
+                pic.type = 3  # Cover (front)
+                pic.mime = "image/jpeg"  # Adjust if your artwork is in a different format.
+                pic.data = image_data                
                 audio.add_picture(pic)
                 logging.info(f"Added artwork to file: {file_name}")
             else:
                 logging.info(f"Artwork already exists in file: {file_name}")
-                #return (file_name, True, None)
 
         audio["album"] = album
         audio["artist"] = artist #may need an override here for the JGB type stuff
@@ -257,7 +253,8 @@ class ConcertTagger:
         self.defaultimage_path = config["cover"]["defaultimage_path"]
         self.artworkpath = None
         self.errormsg = None
-        if self.NoMatch == False:
+
+        if not self.NoMatch:
             try:
                 if self.etreerec.date:
                     self.artworkpath = self._find_artwork('gd',self.etreerec.date)
@@ -427,18 +424,12 @@ class ConcertTagger:
                 try:
                     name, success, error = future.result()
                 except Exception as e:
-                    name = file_name
                     success = False
                     error = str(e)
-                    logging.error(f"Multithreaded _tag_artwork_for_file_thread call: {e}")
+                    logging.error(f"Multithreaded _tag_artwork_for_file_thread call: {e} File: {file_name}")
         pbar.close()
 
 
-
-        #if success:
-        #    print(f"[OK]   {name}")
-        #else:
-        #    print(f"[FAIL] {name} - {error}")
 
     def tag_album(self, clear_existing: bool = True):
         #TODO customise this string (separate function?)
@@ -492,7 +483,7 @@ class ConcertTagger:
 
 
 
-    def tag_files(self, clear_existing_artwork: bool = False, clear_existing_tags: bool = True, num_threads: int = None):
+    def tag_files(self, clear_existing_tags: bool = True, num_threads: int = None):
         """
         Add artwork to all FLAC files using multithreading.
 
@@ -507,29 +498,86 @@ class ConcertTagger:
             logging.warning("No artwork file found to tag.")
             #return
 
+
+        clear_existing_artwork = self.config["cover"].get("clear_existing_artwork", False)
+ 
+
+        retain_existing_artwork = self.config["cover"].get("retain_existing_artwork", True)
+
         artwork_path_str = str(self.artworkpath)
+
+
         album = f'{self.etreerec.date} {self.etreerec.city} {'('+self.folder.recordingtype+') ' if self.folder.recordingtype else ''}{'['+str(self.folder.musicfiles[0].audio.info.bits_per_sample)+'-'+
                                                                         str(self.folder.musicfiles[0].audio.info.sample_rate).rstrip('0')+
                                                                         '] ' if self.folder.musicfiles and str(self.folder.musicfiles[0].audio.info.bits_per_sample) != '16' else ''}{'('+str(self.etreerec.id)+')'}'        
         print(f'{album=}')
+        
         if not self.etreerec.tracks:
             print(f'ERROR: Unable to tag track names. No Metadata found in {self.db.db_path} for {self.folderpath.as_posix()}')
             logging.error(f'No track metadata found in {self.db.db_path} for: {self.folderpath.as_posix()}')
         logging.info(f'Tagging {album} in {self.folderpath.as_posix()}')
+        
         genretag = None
+        
         if self.etreerec.date:
             #todo: chenge this to something configurable and add other artists. 
             if len(self.etreerec.date) > 4:
                 genretag = f"gd{str(self.etreerec.date[0:4])}"        
+        
         dest_file = os.path.join(self.folderpath.as_posix(), "folder.jpg")
-        if not os.path.exists(dest_file):
-            try:
-                shutil.copy2(artwork_path_str, dest_file)
-                logging.info(f"Copied artwork to {dest_file}")
-            except Exception as e:
-                logging.error(f"Error copying artwork: {e}")
+        
+        # if not os.path.exists(dest_file):
+        #     try:
+        #         shutil.copy2(artwork_path_str, dest_file)
+        #         logging.info(f"Copied artwork to {dest_file}")
+        #     except Exception as e:
+        #         logging.error(f"Error copying artwork: {e}")
+        # else:
+        #     logging.info(f"Artwork already exists at {dest_file}")
+
+        artwork_ext = os.path.splitext(artwork_path_str)[1].lower()  # Preserve original extension
+        artwork_formats = ["jpg", "jpeg", "png", "gif", "bmp", "webp"]     
+
+        existing_artworks = [
+            os.path.join(self.folderpath, f"folder.{ext}") 
+            for ext in artwork_formats if os.path.exists(os.path.join(self.folderpath, f"folder.{ext}"))
+        ]
+        if existing_artworks:
+            logging.info(f"Existing artwork files found: {existing_artworks}")  # Debugging log
+
+
+        # 🚨 **If artwork already exists and we are NOT clearing it, moake a note of this**
+        if existing_artworks and not clear_existing_artwork:
+             logging.info(f"Existing artwork found ({existing_artworks}), and replacement is disabled. Skipping copy.")
+
+        # Determine correct artwork destination file based on existing format (if present)
+ 
+
+        if existing_artworks:
+            existing_ext = os.path.splitext(existing_artworks[0])[1].lower()  # Use the first existing file's extension
+            dest_file = os.path.join(self.folderpath, f"folder{existing_ext}")
         else:
-            logging.info(f"Artwork already exists at {dest_file}")        
+            dest_file = os.path.join(self.folderpath, f"folder{artwork_ext}")  # Default to the same format as new artwork
+
+        # If we are clearing existing artwork, handle renaming or deleting old files
+        if clear_existing_artwork and existing_artworks:
+            for existing_artwork in existing_artworks:
+                if retain_existing_artwork:  # Retain old artwork by renaming it
+                    backup_name = f"{existing_artwork}.old"
+                    os.rename(existing_artwork, backup_name)
+                    logging.info(f"Renamed {existing_artwork} to {backup_name}")
+                else:  # Delete existing artwork
+                    os.remove(existing_artwork)
+                    logging.info(f"Deleted existing artwork {existing_artwork}")
+
+        # 🚨 **Prevent overwriting if we already have artwork in the correct format**
+        if os.path.exists(dest_file):
+            logging.info(f"{dest_file} already exists. Not replacing due to retention policy.")
+        # Copy the new artwork file to the destination folder
+        else:
+            shutil.copy2(artwork_path_str, dest_file)
+            logging.info(f"Copied new artwork to {dest_file}.")
+
         # Build argument list using the files from your folder's musicfiles attribute.
         if self.config["preferences"]["segue_string"]:
             gazinta_abbrev = self.config["preferences"]["segue_string"]
@@ -561,10 +609,10 @@ class ConcertTagger:
                 try:
                     name, success, error = future.result()
                 except Exception as e:
-                    name = file_name
-                    success = False
-                    error = str(e)
-                    logging.error(f"Multithreaded _tag_file_thread call: {e}")
+                    #name = file_name
+                    #success = False
+                    #error = str(e)
+                    logging.error(f"Multithreaded _tag_file_thread call: {e}, File: {file_name}")
                 #if success:
                 #    print(f"[OK]   {name}")
                 #else:
@@ -574,7 +622,6 @@ class ConcertTagger:
         concert_folders:list, 
         etree_db:SQLiteEtreeDB, 
         config,
-        clear_existing_artwork: bool = False, 
         clear_existing_tags: bool = False
     ):
         """
@@ -601,7 +648,7 @@ class ConcertTagger:
             tagger = ConcertTagger(concert_folder, config, etree_db)
             if not tagger.errormsg:
                 #tagger.tag_album()
-                tagger.tag_files(clear_existing_artwork,clear_existing_tags)
+                tagger.tag_files(clear_existing_tags)
             else:
                 logging.error (f'tagger.errormsg: {tagger.errormsg}')
             #except Exception as e:
@@ -658,7 +705,7 @@ if __name__ == "__main__":
     from time import perf_counter
     start_time = perf_counter()
     logfilename = 'tag_log.log' 
-    logging.basicConfig(filename=logfilename,level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
+    logging.basicConfig(filename=logfilename,level=logging.WARN, format="%(asctime)s %(levelname)s: %(message)s")
     config_file = os.path.join(os.path.dirname(__file__),"config.toml")
     config = load_config(config_file)
 
@@ -668,22 +715,22 @@ if __name__ == "__main__":
 
 # two level deep folder enumeration for processing
     #parentofparents =r'M:/To_Tag'
-    parentofparents = r'/Users/rjl/Documents/GitHub/etree_tag/test'
-    parentlist = sorted([f.path.replace('\\','/') for f in os.scandir(parentofparents) if f.is_dir()])
-    for parentfolder in parentlist:
-        if parentfolder.lower().endswith("fail"): #addl filtering, exclude if the folder name ends with fail
-            continue
-        concert_folders.extend(sorted([f.path.replace('\\','/') for f in os.scandir(parentfolder) if f.is_dir()]))
+    # parentofparents = r'/Users/rjl/Documents/GitHub/etree_tag/test'
+    # parentlist = sorted([f.path.replace('\\','/') for f in os.scandir(parentofparents) if f.is_dir()])
+    # for parentfolder in parentlist:
+    #     if parentfolder.lower().endswith("fail"): #addl filtering, exclude if the folder name ends with fail
+    #         continue
+    #     concert_folders.extend(sorted([f.path.replace('\\','/') for f in os.scandir(parentfolder) if f.is_dir()]))
 
 #single parent folder
-    # parentfolder = r'X:\Downloads\_FTP\gdead.1980.project'
-    # concert_folders = sorted([f.path.replace('\\','/') for f in os.scandir(parentfolder) if f.is_dir()])
+    #parentfolder = r'M:/To_Tag/gd1995'
+    #concert_folders = sorted([f.path.replace('\\','/') for f in os.scandir(parentfolder) if f.is_dir()])
     
 
 #if using a single folder, or specific folders use a python list of path(s): 
-    # concert_folders = [
-    #       r"M:/To_Tag/gd1980/gd1980-05-06.99954.aud.morris.sbeok.flac1644"
-    # ]    
+    concert_folders = [
+           r"M:\To_Tag\gd1995\gd1995-02-19.95443.schoeps.wklitz.flac16"
+     ]    
 
 
     #parentfolder = Path(parentfolderpath).as_posix()
