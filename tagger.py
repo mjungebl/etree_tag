@@ -381,7 +381,7 @@ class ConcertTagger:
 
         logging.info(f"Existing artwork files found: {existing_artworks}")  # Debugging log
 
-        # 🚨 **If artwork already exists and we are NOT clearing it, exit early**
+        # If artwork already exists and we are NOT clearing it, exit early
         if existing_artworks and not clear_existing_artwork:
             logging.info(f"Existing artwork found ({existing_artworks}), and replacement is disabled. Skipping copy.")
             return  # Exit immediately—NO new folder.jpg should be created
