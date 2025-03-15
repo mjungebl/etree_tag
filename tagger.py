@@ -10,6 +10,8 @@ from tqdm import tqdm
 #import multiprocessing
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import shutil
+import re
+from datetime import datetime
 """
 This script provides functionality for tagging FLAC files with metadata and artwork using multithreading. 
 It includes classes and functions to load configuration settings, find matching recordings, and tag files with album information and artwork.
@@ -58,34 +60,63 @@ def load_config(config_path: str) -> dict:
         with open(config_path, "rb") as f:
             config = tomllib.load(f)
         return config
-        """    
-        # Load the configuration from your flac_config.toml file.
-        config = load_config("flac_config.toml")
-
-        # Extract values from the [preferences] section.
-        year_format = config["preferences"]["year_format"]
-        segue_string = config["preferences"]["segue_string"]
-        soundboard_abbrev = config["preferences"]["soundboard_abbrev"]
-        aud_abbrev = config["preferences"]["aud_abbrev"]
-        matrix_abbrev = config["preferences"]["matrix_abbrev"]
-        ultramatrix_abbrev = config["preferences"]["ultramatrix_abbrev"]
-
-        # Extract values from the [album_tag] section.
-        include_bitrate = config["album_tag"]["include_bitrate"]
-        include_bitrate_not16_only = config["album_tag"]["include_bitrate_not16_only"]
-        include_venue = config["album_tag"]["include_venue"]
-        include_city = config["album_tag"]["include_city"]
-        order = config["album_tag"]["order"]
-        prefix = config["album_tag"]["prefix"]
-        suffix = config["album_tag"]["suffix"]
-
-        # Extract values from the [cover] section.
-        artwork_folders = config["cover"]["artwork_folders"]
-        defaultimage_path = config["cover"]["defaultimage_path"]
-        """
+    
     except Exception as e:
         print(f"Error loading configuration: {e}")
         raise    
+
+
+def extract_year(date_str):
+    # Remove any leading/trailing whitespace.
+    date_str = date_str.strip()
+    
+    # First, try to parse the string as a valid ISO date (YYYY-MM-DD).
+    try:
+        valid_date = datetime.strptime(date_str, "%Y-%m-%d")
+        return valid_date.year
+    except ValueError:
+        # If it fails, fall back to extracting a two-digit year.
+        pass
+
+    # Look for a two-digit year pattern at the end of the string.
+    match = re.search(r'(\d{2})$', date_str)
+    if match:
+        two_digit = int(match.group(1))
+        # Use the last two digits of the current year (e.g., "25" for 2025).
+        current_threshold = int(str(datetime.now().year)[-2:])
+        if two_digit <= current_threshold:
+            return 2000 + two_digit
+        else:
+            return 1900 + two_digit
+
+    # If no valid year is found, return None.
+    return None
+
+
+def remove_match_from_lists(key_list, list2, list3, item):
+    """
+    Remove all occurrences of an item from the master list,
+    and remove the corresponding elements from list2 and list3.
+    
+    Parameters:
+        key_list (list): The master list to search for the item.
+        list2 (list): The second list to remove corresponding elements.
+        list3 (list): The third list to remove corresponding elements.
+        item: The item to be removed.
+    
+    Returns:
+        int: The number of occurrences removed.
+    """
+    # Get all indices where the item occurs in the master list.
+    indices_to_remove = [i for i, v in enumerate(key_list) if v == item]
+    
+    # Remove items in reverse order to avoid index shifting issues.
+    for i in reversed(indices_to_remove):
+        key_list.pop(i)
+        list2.pop(i)
+        list3.pop(i)
+    
+    return (key_list, list2, list3)
 
 def _tag_file_thread(args):
     """
@@ -254,9 +285,10 @@ class ConcertTagger:
         self.artworkpath = None
         self.errormsg = None
 
-        if not self.NoMatch:
+        if not self.NoMatch: #doh, double negative
+            #TODO fix this for other artists, config file work will be needed as well.
             try:
-                if self.etreerec.date:
+                if self.etreerec.date and self.etreerec.artist == 'Grateful Dead':
                     self.artworkpath = self._find_artwork('gd',self.etreerec.date)
             except Exception as e:
                 logging.error(f'Exception: {e} in _find_artwork for {self.folderpath.as_posix()}')
@@ -480,7 +512,92 @@ class ConcertTagger:
         else:
             logging.info(f'Skipped tags: No Album generated for folder {self.folderpath.as_posix()}')
 
+    def generate_title(self):
+        # Extract values from the [preferences] section.
+        year_format = config["preferences"].get("year_format",None)
+        soundboard_abbrev = config["preferences"].get("soundboard_abbrev",None)
+        aud_abbrev = config["preferences"].get("aud_abbrev",None)
+        matrix_abbrev = config["preferences"].get("matrix_abbrev",None)
+        ultramatrix_abbrev = config["preferences"].get("ultramatrix_abbrev",None)
 
+        # Extract values from the [album_tag] section.
+        include_bitrate = config["album_tag"].get("include_bitrate",True)
+        include_bitrate_not16_only = config["album_tag"].get("include_bitrate_not16_only",True)
+        include_venue = config["album_tag"].get("include_venue",True)
+        include_city = config["album_tag"].get("include_city",True)
+        include_shnid = config["album_tag"].get("include_shnid",True)
+        order = config["album_tag"].get("order",None)
+        prefix = config["album_tag"].get("prefix",None)
+        suffix = config["album_tag"].get("suffix",None)
+        title_year = extract_year(self.etreerec.date)
+        show_date = self.etreerec.date
+
+        #if the date is in the incorrect format, make an attempt to fix it for the title
+        if title_year:
+            if str(title_year) != self.etreerec.date[0:4]:
+                
+                if '/' in self.etreerec.date:
+                    splitter = '/'
+                elif '-' in self.etreerec.date:
+                    splitter = '-'
+                if splitter:
+                    show_date_parts = self.etreerec.date.split(splitter)
+                    #print(f'{show_date_parts=}')
+                    if len(show_date_parts) == 3:
+                        show_date = f"{str(title_year)}-{show_date_parts[0]}-{show_date_parts[1]}"
+        if year_format.lower() == 'yy':
+            show_date = show_date[2:]
+        #if the order is peecified and the prefix and suffix values are the same length, build the format string        
+        recording_type = self.folder.recordingtype
+        if recording_type.lower() == 'sbd' and soundboard_abbrev:
+            recording_type = soundboard_abbrev
+        elif recording_type.lower() == 'aud' and aud_abbrev:
+            recording_type = aud_abbrev
+        elif recording_type.lower() == 'matrix' and matrix_abbrev:
+            recording_type = matrix_abbrev
+        elif recording_type.lower() == 'ultramatrix' and ultramatrix_abbrev:
+            recording_type = ultramatrix_abbrev
+        city = self.etreerec.city
+        venue = self.etreerec.etreevenue
+        shnid = self.etreerec.id
+        bitrate = f'{str(self.folder.musicfiles[0].audio.info.bits_per_sample)}-{str(self.folder.musicfiles[0].audio.info.sample_rate).rstrip("0")}'
+        if include_bitrate_not16_only and str(self.folder.musicfiles[0].audio.info.bits_per_sample) == '16':
+            include_bitrate = False
+        #clean up the order list to remove any empty strings or None values
+        if (not include_venue or not venue) and 'venue' in order:
+            remove_match_from_lists(order, prefix, suffix, 'venue')
+        if (not include_city or not city) and 'city' in order:
+            remove_match_from_lists(order, prefix, suffix, 'city')
+        #no need to check for an empty shnid or bitrate, won't get here if no match or no files
+        if not include_shnid and 'shnid' in order: 
+            remove_match_from_lists(order, prefix, suffix, 'shnid')
+        if not include_bitrate and 'bitrate' in order:
+            remove_match_from_lists(order, prefix, suffix, 'bitrate')
+        format_str = ''
+        if len(order) == len(prefix) == len(suffix) and order:
+            for i in range(len(order)):
+                format_str = format_str + f"{prefix[i]}{'{'}{order[i]}{'}'}{suffix[i]}"
+        else :
+            format_str = None
+        #print(f'{format_str=}')
+        album = None
+        try:
+            if format_str:
+                album = format_str.format(**locals())
+        except Exception as e:
+            logging.error(f"Error formatting album title. reverting to default logic. {shnid=}: {e}")
+        if not album:
+            # Default album title generation logic
+            album = f'{show_date} {venue} {city} '
+            if recording_type:
+                album = album + f'{(recording_type)} '
+            if include_bitrate and self.folder.musicfiles:
+                if str(self.folder.musicfiles[0].audio.info.bits_per_sample) != '16' or not include_bitrate_not16_only:
+                    album = album + f'[{bitrate}] '
+
+            album = album + f'({str(shnid)})'
+
+        return album
 
 
     def tag_files(self, clear_existing_tags: bool = True, num_threads: int = None):
@@ -494,22 +611,7 @@ class ConcertTagger:
             NOTE: false does not prevent tags from being overwritten if there is a new value found. It will clear everything                 
             num_threads (int, optional): Number of threads to use. Defaults to os.cpu_count()-1.
         """
-        if not self.artworkpath:
-            logging.warning("No artwork file found to tag.")
-            #return
-
-
-        clear_existing_artwork = self.config["cover"].get("clear_existing_artwork", False)
- 
-
-        retain_existing_artwork = self.config["cover"].get("retain_existing_artwork", True)
-
-        artwork_path_str = str(self.artworkpath)
-
-
-        album = f'{self.etreerec.date} {self.etreerec.city} {'('+self.folder.recordingtype+') ' if self.folder.recordingtype else ''}{'['+str(self.folder.musicfiles[0].audio.info.bits_per_sample)+'-'+
-                                                                        str(self.folder.musicfiles[0].audio.info.sample_rate).rstrip('0')+
-                                                                        '] ' if self.folder.musicfiles and str(self.folder.musicfiles[0].audio.info.bits_per_sample) != '16' else ''}{'('+str(self.etreerec.id)+')'}'        
+        album = self.generate_title()
         print(f'{album=}')
         
         if not self.etreerec.tracks:
@@ -520,21 +622,19 @@ class ConcertTagger:
         genretag = None
         
         if self.etreerec.date:
-            #todo: chenge this to something configurable and add other artists. 
-            if len(self.etreerec.date) > 4:
-                genretag = f"gd{str(self.etreerec.date[0:4])}"        
-        
-        dest_file = os.path.join(self.folderpath.as_posix(), "folder.jpg")
-        
-        # if not os.path.exists(dest_file):
-        #     try:
-        #         shutil.copy2(artwork_path_str, dest_file)
-        #         logging.info(f"Copied artwork to {dest_file}")
-        #     except Exception as e:
-        #         logging.error(f"Error copying artwork: {e}")
-        # else:
-        #     logging.info(f"Artwork already exists at {dest_file}")
+            
+            #TODO: change this to something configurable and add other artists. 
+            if len(self.etreerec.date) > 4 and self.etreerec.artist == 'Grateful Dead':
+                album_year = extract_year(self.etreerec.date)
+                genretag = f"gd{str(album_year)}"
 
+        #handle the artwork (folder.jpg file)
+        if not self.artworkpath:
+            logging.warning("No artwork file found to tag.")
+        clear_existing_artwork = self.config["cover"].get("clear_existing_artwork", False)
+        retain_existing_artwork = self.config["cover"].get("retain_existing_artwork", True)
+        artwork_path_str = str(self.artworkpath)        
+        dest_file = os.path.join(self.folderpath.as_posix(), "folder.jpg")
         artwork_ext = os.path.splitext(artwork_path_str)[1].lower()  # Preserve original extension
         artwork_formats = ["jpg", "jpeg", "png", "gif", "bmp", "webp"]     
 
@@ -613,57 +713,12 @@ class ConcertTagger:
                     #success = False
                     #error = str(e)
                     logging.error(f"Multithreaded _tag_file_thread call: {e}, File: {file_name}")
-                #if success:
-                #    print(f"[OK]   {name}")
-                #else:
-                #    print(f"[FAIL] {name} - {error}")
-
-    def tag_shows_debug(
-        concert_folders:list, 
-        etree_db:SQLiteEtreeDB, 
-        config,
-        clear_existing_tags: bool = False
-    ):
-        """
-        Tags concert folders with metadata from the etree database.
-        Args:
-            concert_folders (list): List of paths to concert folders to be tagged.
-            etree_db (SQLiteEtreeDB): Instance of the SQLiteEtreeDB class for database access.
-            config: Configuration settings for tagging.
-            clear_existing_artwork (bool, optional): If True, existing artwork will be cleared before tagging. Defaults to False.
-            clear_existing_tags (bool, optional): If True, existing tags will be cleared before tagging. Defaults to False.
-        Raises:
-            Exception: If an error occurs during the tagging process, it will be logged.
-        """        
-        folder_count = len(concert_folders)
-        currentcount = 0
-        
-        print(f"Processing tags for {folder_count} folders.")
-        for concert_folder in concert_folders:
-            currentcount = currentcount + 1
-            print("------------------------------------------------------------------------------")
-            print(f"Processing ({currentcount}/{folder_count}): {Path(concert_folder).name}")
-            #try:
-            #if 1==1:
-            tagger = ConcertTagger(concert_folder, config, etree_db)
-            if not tagger.errormsg:
-                #tagger.tag_album()
-                tagger.tag_files(clear_existing_tags)
-            else:
-                logging.error (f'tagger.errormsg: {tagger.errormsg}')
-            #except Exception as e:
-            #else:
-                # if e:
-                #     logging.error(f'Error Processing folder {concert_folder} {e}')
-                # else:
-                #     logging.error(f'Error Processing folder {concert_folder}')
+        pbar.close()
 
     def tag_shows(
         concert_folders:list, 
         etree_db:SQLiteEtreeDB, 
         config,
-        clear_existing_artwork: bool = False,
-        retain_existing_artwork = True, 
         clear_existing_tags: bool = False
     ):
         """
@@ -686,21 +741,17 @@ class ConcertTagger:
             print("------------------------------------------------------------------------------")
             print(f"Processing ({currentcount}/{folder_count}): {Path(concert_folder).name}")
             try:
-            #if 1==1:
                 tagger = ConcertTagger(concert_folder, config, etree_db)
                 if not tagger.errormsg:
-                    #tagger.tag_album()
-                    tagger.tag_files(clear_existing_artwork,clear_existing_tags)
+                    tagger.tag_files(clear_existing_tags=clear_existing_tags)
                 else:
                     logging.error (f'tagger.errormsg: {tagger.errormsg}')
             except Exception as e:
-            #else:
                 if e:
                     logging.error(f'Error Processing folder {concert_folder} {e}')
                 else:
                     logging.error(f'Error Processing folder {concert_folder}')
 
-# Example usage:
 if __name__ == "__main__":
     from time import perf_counter
     start_time = perf_counter()
@@ -710,7 +761,7 @@ if __name__ == "__main__":
     config = load_config(config_file)
 
 
-    etreedb = SQLiteEtreeDB(r'db/etree_scrape.db') #make sure this is outside the loop called in the below function
+    etreedb = SQLiteEtreeDB(r'db/etree_tag_db.db') #make sure this is outside the loop called in the below function
     concert_folders = []
 
 # two level deep folder enumeration for processing
@@ -725,25 +776,17 @@ if __name__ == "__main__":
 #single parent folder
     #parentfolder = r'M:/To_Tag/gd1995'
     #concert_folders = sorted([f.path.replace('\\','/') for f in os.scandir(parentfolder) if f.is_dir()])
-    
 
-#if using a single folder, or specific folders use a python list of path(s): 
+#if using a single folder, or specific folders use a python list of path(s):
+#best for getting started and testing
     concert_folders = [
-           r"M:\To_Tag\gd1995\gd1995-02-19.95443.schoeps.wklitz.flac16"
+           r"M:\To_Tag\gd1966\gd1966-xx.xx.136658.acidtest#3.sbd.mr.datflac1644"
      ]    
-
-
-    #parentfolder = Path(parentfolderpath).as_posix()
-    #concert_folders must be a list of folders that contain folders. Don't pass without parent directory, it won't be good
+    #concert_folders must be a list of folders that contain folders. 
+    #Don't pass without parent directory, it won't be good
     #TODO, add some type of check when scanning the first folder
-    #take only one level of directories from the parent folder
-    #concert_folders = sorted([f.path.replace('\\','/') for f in os.scandir(parentfolder) if f.is_dir()]) 
-    ConcertTagger.tag_shows(
-        concert_folders,
-        etreedb,config,
-        clear_existing_tags = True
-    )
 
+    ConcertTagger.tag_shows(concert_folders, etreedb, config, clear_existing_tags=True)
 
     etreedb.close
     

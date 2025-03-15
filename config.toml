@@ -13,17 +13,20 @@ ultramatrix_abbrev = "Ultramatrix"
 [album_tag]
 # Toggle inclusion of optional components in the album tag.
 include_bitrate = true
-include_bitrate_not16_only = true
+include_bitrate_not16_only = true # if true, only include the bitrate if it is not 16 bit
+include_shnid    = true
 include_venue   = false
 include_city    = true
 
 # Specify the order in which the selected components should appear.
-# Valid values: "bitrate", "venue", "city", "shnid", "date"
-# Only include the components that are enabled above.
-order = ["date","city", "shnid","bitrate"]
-#use the below lists to add a string before or after each of the sections above. Include any spaces that are desired. 
-prefix = ['','','(','[']
-suffix = ['','',')',']']
+# Valid values: "bitrate", "venue", "city", "recording_type" , "shnid", "show_date", 
+# if items are excluded by the above variables, they will be ignored in the order list.
+order = ["show_date","city","venue", "recording_type", "shnid","bitrate"]
+#use the below lists to add a string before or after each of the sections above. 
+#Include any spaces that are desired between elements in either the prefix or suffix. 
+#NOTE: These lists must be the same length as the order list above, otherwise these lists will be ignored completely
+prefix = ['',' ',' ',' ',' (',' [']
+suffix = ['','','','',')',']']
 #specify the directories to search for artwork in the order in which they should be searched order to search.
 # Underneath these folders the files are separated into subdirectories by year. the search will append the year to the directory and if a directory
 #   exists for the given year, that directory will be searched in each folder. 

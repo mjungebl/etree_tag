@@ -1,4 +1,23 @@
+"""
 #!/usr/bin/env python3
+This script processes FLAC files and their associated track info files to tag the FLAC files with metadata.
+It includes functions for validating dates, sorting files, cleaning track names, stripping text after a certain number of spaces,
+tagging FLAC files, parsing info files, adding line numbers to files, checking if all FLAC files are tagged, and clearing specific tags.
+Functions:
+- is_valid_date(date_str): Checks if a given string is a valid date in various formats.
+- file_sort_key(filepath): Generates a sorting key for FLAC files based on disc and track numbers.
+- clean_track_name(title): Cleans a track title by removing unwanted patterns and characters.
+- strip_after_n_spaces(s, n): Returns the substring of s up to the first occurrence of n or more consecutive whitespace characters.
+- tag_flac_files(track_mapping): Tags FLAC files using a given track mapping dictionary.
+- parse_info_file(directory_path): Parses an info file in a given directory to extract track entries for FLAC files.
+- add_line_numbers(file_path): Adds sequential line numbers to each nonempty line in a file.
+- tag_flac_files_wrapper(track_mapping): Wrapper function to log the mapping before tagging FLAC files.
+- all_flac_tagged(directory): Checks if all FLAC files in a directory have non-empty 'tracknumber' and 'title' tags.
+- clear_title_tag_in_folder(directory_path): Clears the 'title' tag from all FLAC files in a specified folder.
+- clear_song_specific_tags_in_folder(directory_path): Clears the 'title', 'tracknumber', and 'discnumber' tags from all FLAC files in a specified folder.
+- read_file_to_list(file_name): Reads a text file and returns a list of its lines.
+The script can be run as a standalone program, processing a specified directory of FLAC files and their info file.
+"""
 import os
 import re
 import argparse
@@ -9,6 +28,18 @@ from datetime import datetime
 
 
 def is_valid_date(date_str):
+    """
+    Check if the provided string is a valid date in any of the specified formats.
+
+    Args:
+        date_str (str): The date string to validate.
+
+    Returns:
+        bool: True if the date string matches any of the specified formats, False otherwise.
+
+    Logs:
+        Logs a message indicating the date string that was found and skipped if it matches any format.
+    """
     formats = ['%y-%m-%d', '%Y-%m-%d', '%m-%d-%Y', '%m-%d-%y','%y.%m.%d', '%Y.%m.%d', '%m.%d.%Y', '%m.%d.%y'
                ,'%y/%m/%d', '%Y/%m/%d', '%m/%d/%Y', '%m/%d/%y']
     #print(f'{date_str=}')
@@ -25,6 +56,18 @@ def is_valid_date(date_str):
     
 
 def file_sort_key(filepath):
+    """
+    Generate a sorting key for a given file path based on disc and track numbers.
+    The function extracts disc and track numbers from the file name using a regular expression.
+    The expected format in the file name is either 'd<disc_number>t<track_number>' or 's<disc_number>t<track_number>',
+    where <disc_number> and <track_number> are integers.
+    If the disc and track numbers are found, the function returns a tuple (disc, track).
+    If the pattern is not found, it returns a tuple (float('inf'), base.lower()), where 'base' is the base name of the file.
+    Args:
+        filepath (str): The path to the file.
+    Returns:
+        tuple: A tuple containing the disc and track numbers if found, otherwise (float('inf'), base.lower()).
+    """
     base = os.path.splitext(os.path.basename(filepath))[0]
     m = re.search(r"[ds](\d+)[tT](\d+)", base, re.IGNORECASE)
     #m = re.search(r"[ds](\d+)[tT](\d+)$", base, re.IGNORECASE)
@@ -41,15 +84,28 @@ def file_sort_key(filepath):
 
 def clean_track_name(title):
     """
-    Cleans a track title by:
-      - Removing time patterns (e.g. "08:05.425")
-      - Removing text within square brackets and curly braces
-      - Removing all asterisk (*) characters
-      - Removing a leading "->" or ">" along with any following whitespace
-      - Trimming any leading or trailing whitespace
-
-    If the cleaned title is empty, the original title is returned.
+    Cleans up a track name by performing various substitutions and removals.
+    The function performs the following operations on the input title:
+    1. Strips content after a certain number of spaces.
+    2. Removes oddball whitespace characters (tabs, newlines, etc.).
+    3. Trims multiple spaces down to a single space.
+    4. Removes content within square brackets.
+    5. Removes content within curly braces.
+    6. Removes time patterns within parentheses (e.g., "06:03" or "06:03.667").
+    7. Removes standalone time patterns (e.g., "06:03" or "06:03.667").
+    8. Removes asterisk, semicolon, and percent characters.
+    9. Removes leading "->" or ">" with optional whitespace.
+    10. Removes "encore" related text unless it contains "encore break".
+    11. Removes leading "e:" with optional whitespace.
+    12. Removes leading dashes.
+    13. Ensures ">" is preceded and followed by a space if not already followed by whitespace or end-of-string.
+    14. Strips leading and trailing whitespace.
+    Args:
+        title (str): The original track name to be cleaned.
+    Returns:
+        str: The cleaned track name. If the cleaned name is empty, returns the original title.
     """
+
     original = title
     strip_after_n_spaces(title,5)
     #get rid of oddball whitespace
@@ -71,13 +127,14 @@ def clean_track_name(title):
     # Remove a leading "->" or ">" with optional whitespace.
     title = re.sub(r'^\s*(->|>)\s*', '', title)
     #Encore
-    if not 'encore break' in title.lower():
+    if 'encore break' not in title.lower():
         title = re.sub(r"^encore:?\s*", "", title, flags=re.IGNORECASE)
         title = re.sub(r"[\(\[]\s*encore\s*[\)\]]", "", title, flags=re.IGNORECASE)
     title = re.sub(r'^\s*e:\s*', '', title, flags=re.IGNORECASE)
     #get rid of leading dashes:
     title = re.sub(r'^\s*-\s*', '', title)
     # Ensure ">" is preceded by a space.
+    title = title.replace('--', '-')
     title = title.replace('->', '>')
     title = re.sub(r'(?<!\s)>', ' >', title)
     # Ensure ">" is followed by a space if not already followed by whitespace or end-of-string.
@@ -86,7 +143,6 @@ def clean_track_name(title):
     cleaned = title.strip()
     return cleaned if cleaned else original
 
-import re
 
 def strip_after_n_spaces(s, n):
     """
@@ -108,18 +164,23 @@ def strip_after_n_spaces(s, n):
                 return result
     return s
 
-# Example usage:
-print(strip_after_n_spaces("Keep this part     remove this", 5))  # -> "Keep this part"
-print(strip_after_n_spaces("No extra spaces here", 5))            # -> "No extra spaces here"
 
 def tag_flac_files(track_mapping):
     """
-    Given a track_mapping dictionary where each key is a FLAC file path and
-    each value is a tuple (disc, track, title), tag the FLAC files using Mutagen.
-    
-    If both the tracknumber and discnumber tags already exist, check that they match
-    the generated values. If they don't match, log an error and skip tagging that file.
+    Tags FLAC files with the provided track information.
+    Args:
+        track_mapping (dict): A dictionary where the keys are file paths to FLAC files and the values are tuples 
+                              containing disc number, track number, and title.
+    The function performs the following steps:
+    1. Logs the start of tagging for each file.
+    2. Attempts to load the FLAC file.
+    3. Checks for existing track and disc numbers in the file's metadata.
+    4. If existing tags are found and they do not match the provided values, logs an error and skips tagging.
+    5. If existing tags match or are not present, updates the track number, disc number, and title.
+    6. Saves the updated metadata back to the file.
+    7. Logs the success or failure of the tagging operation.
     """
+
     for flac_path, (disc, track, title) in track_mapping.items():
         logging.info(f"Tagging file: {flac_path} -> Generated: Disc {disc}, Track {track}: {title}")
         try:
@@ -155,6 +216,7 @@ def tag_flac_files(track_mapping):
             logging.error(f"Error saving {flac_path}: {e}")
 
 def parse_info_file(directory_path):
+
     """
     Given a directory path, finds the info file (assumed to be named in the format "base.shnid.txt"),
     reads it, and attempts to parse track entries for the FLAC files in the directory.
@@ -192,7 +254,8 @@ def parse_info_file(directory_path):
     The track-order check (tracks_in_order) is modified so that for entries with a disc value,
     track numbers must be consecutive starting at 1, and for entries where disc is not auto-assigned,
     the numbers must be strictly increasing.
-
+    Args:
+        directory_path (str): The path to the directory containing the FLAC and info files.
     Returns:
         dict: Mapping from FLAC file full paths to a tuple (disc, track, title). For the sNNN format,
               disc is taken as the first digit and track is the remaining two digits.
@@ -553,6 +616,25 @@ def all_flac_tagged(directory):
 
 
 def main():
+    """
+    Main function to process FLAC files and their track info.
+    This function sets up logging, parses command-line arguments, and processes
+    the specified directory containing FLAC files and an info file. It can also
+    optionally add sequential line numbers to a specified file.
+    Command-line arguments:
+    directory (str): Directory containing the FLAC files and the info file.
+    --add-line-numbers (str, optional): File path for which to add sequential line numbers.
+    The function performs the following steps:
+    1. Sets up logging to both a file and the console.
+    2. Parses command-line arguments.
+    3. Checks if the specified directory is valid.
+    4. Optionally adds line numbers to a specified file.
+    5. Checks if all FLAC files in the directory are already tagged.
+    6. If not tagged, parses the info file to get track mapping.
+    7. Tags the FLAC files based on the track mapping.
+    Returns:
+    None
+    """
     logging.basicConfig(
         level=logging.INFO,
         #filename='Tagging.log',
@@ -698,7 +780,7 @@ if __name__ == "__main__":
     needfixing = []
     #folderlist = [Path(f).as_posix() for f in os.scandir(dirname) if f.is_dir()]
     folderlist = [
-          r'X:\Downloads\_FTP\gdead.1972.project\gd1972-09-28.26933.sbd.patched-chrisl.sbeok.flac16'
+          r"M:/To_Tag/gd1960s/gd1966-01-08.106505.sbd.lestatkatt.flac16"
          ]
     #folderlist = read_file_to_list('untaggged_list.txt')
     for fldr in folderlist:

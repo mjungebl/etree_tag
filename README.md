@@ -66,33 +66,35 @@ etreedb = SQLiteEtreeDB(db_path="db/etree_tag_dbv2.db")
 ---
 
 ## Configuration
-(code built for segue string and for artwork_folders, everything else is in the works)
+See config.toml file for additional explanation.
 
 
 ```toml
-[cover]
-artwork_folders = [
-  "X:/Artwork/Dead",
-  "Y:/Shared/AlbumArt/GD"
-]
-defaultimage_path = "X:/Artwork/default.jpg"
-
 [preferences]
-year_format = "%Y"
+# Set the year format for tags.
+# Valid options: "YYYY" or "YY"
+year_format = "YYYY"
 segue_string = "->"
 soundboard_abbrev = "SBD"
 aud_abbrev = "AUD"
-matrix_abbrev = "MTRX"
-ultramatrix_abbrev = "UMTX"
-
+matrix_abbrev = "MTX"
+ultramatrix_abbrev = "Ultramatrix"
 [album_tag]
 include_bitrate = true
 include_bitrate_not16_only = true
-include_venue = true
-include_city = true
-order = "date_venue"
-prefix = ""
-suffix = ""
+include_shnid    = true
+include_venue   = false
+include_city    = true
+order = ["show_date","city","venue", "recording_type", "shnid","bitrate"]
+prefix = ['',' ',' ',' ',' (',' [']
+suffix = ['','','','',')',']']
+
+[cover]
+clear_existing_artwork = false # Clears existing artwork tags and sets a new one
+retain_existing_artwork = true
+artwork_folders = ['GD_Art/EE_Artwork/', 'GD_Art/TV_Artwork/']
+
+defaultimage_path = 'GD_Art/default.jpg'
 ```
 ## License
 
