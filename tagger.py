@@ -549,14 +549,15 @@ class ConcertTagger:
             show_date = show_date[2:]
         #if the order is peecified and the prefix and suffix values are the same length, build the format string        
         recording_type = self.folder.recordingtype
-        if recording_type.lower() == 'sbd' and soundboard_abbrev:
-            recording_type = soundboard_abbrev
-        elif recording_type.lower() == 'aud' and aud_abbrev:
-            recording_type = aud_abbrev
-        elif recording_type.lower() == 'matrix' and matrix_abbrev:
-            recording_type = matrix_abbrev
-        elif recording_type.lower() == 'ultramatrix' and ultramatrix_abbrev:
-            recording_type = ultramatrix_abbrev
+        if recording_type:
+            if recording_type.lower() == 'sbd' and soundboard_abbrev:
+                recording_type = soundboard_abbrev
+            elif recording_type.lower() == 'aud' and aud_abbrev:
+                recording_type = aud_abbrev
+            elif recording_type.lower() == 'matrix' and matrix_abbrev:
+                recording_type = matrix_abbrev
+            elif recording_type.lower() == 'ultramatrix' and ultramatrix_abbrev:
+                recording_type = ultramatrix_abbrev
         city = self.etreerec.city
         venue = self.etreerec.etreevenue
         shnid = self.etreerec.id
@@ -715,6 +716,43 @@ class ConcertTagger:
                     logging.error(f"Multithreaded _tag_file_thread call: {e}, File: {file_name}")
         pbar.close()
 
+    def tag_shows_debug(
+        concert_folders:list, 
+        etree_db:SQLiteEtreeDB, 
+        config,
+        clear_existing_tags: bool = False
+    ):
+        """
+        Tags concert folders with metadata from the etree database.
+        Args:
+            concert_folders (list): List of paths to concert folders to be tagged.
+            etree_db (SQLiteEtreeDB): Instance of the SQLiteEtreeDB class for database access.
+            config: Configuration settings for tagging.
+            clear_existing_artwork (bool, optional): If True, existing artwork will be cleared before tagging. Defaults to False.
+            clear_existing_tags (bool, optional): If True, existing tags will be cleared before tagging. Defaults to False.
+        Raises:
+            Exception: If an error occurs during the tagging process, it will be logged.
+        """        
+        folder_count = len(concert_folders)
+        currentcount = 0
+        
+        print(f"Processing tags for {folder_count} folders.")
+        for concert_folder in concert_folders:
+            currentcount = currentcount + 1
+            print("------------------------------------------------------------------------------")
+            print(f"Processing ({currentcount}/{folder_count}): {Path(concert_folder).name}")
+            #try:
+            tagger = ConcertTagger(concert_folder, config, etree_db)
+            if not tagger.errormsg:
+                tagger.tag_files(clear_existing_tags=clear_existing_tags)
+            else:
+                logging.error (f'tagger.errormsg: {tagger.errormsg}')
+            # except Exception as e:
+            #     if e:
+            #         logging.error(f'Error Processing folder {concert_folder} {e}')
+            #     else:
+            #         logging.error(f'Error Processing folder {concert_folder}')
+
     def tag_shows(
         concert_folders:list, 
         etree_db:SQLiteEtreeDB, 
@@ -761,7 +799,7 @@ if __name__ == "__main__":
     config = load_config(config_file)
 
 
-    etreedb = SQLiteEtreeDB(r'db/etree_tag_db.db') #make sure this is outside the loop called in the below function
+    etreedb = SQLiteEtreeDB(r'db/etree_scrape.db') #make sure this is outside the loop called in the below function
     concert_folders = []
 
 # two level deep folder enumeration for processing
@@ -774,14 +812,14 @@ if __name__ == "__main__":
     #     concert_folders.extend(sorted([f.path.replace('\\','/') for f in os.scandir(parentfolder) if f.is_dir()]))
 
 #single parent folder
-    #parentfolder = r'M:/To_Tag/gd1995'
-    #concert_folders = sorted([f.path.replace('\\','/') for f in os.scandir(parentfolder) if f.is_dir()])
+    parentfolder = r'X:\Downloads\_FTP\gdead.9999.updates'
+    concert_folders = sorted([f.path.replace('\\','/') for f in os.scandir(parentfolder) if f.is_dir()])
 
 #if using a single folder, or specific folders use a python list of path(s):
 #best for getting started and testing
-    concert_folders = [
-           r"M:\To_Tag\gd1966\gd1966-xx.xx.136658.acidtest#3.sbd.mr.datflac1644"
-     ]    
+    # concert_folders = [
+    #        r"M:\To_Tag\gd1966\gd1966-xx.xx.136658.acidtest#3.sbd.mr.datflac1644"
+    #  ]    
     #concert_folders must be a list of folders that contain folders. 
     #Don't pass without parent directory, it won't be good
     #TODO, add some type of check when scanning the first folder
