@@ -14,9 +14,8 @@
 
 1. [Requirements](#requirements)  
 2. [Usage](#usage)  
-3. [Script Overview](#script-overview)
-5. [Configuration](#configuration)  
-6. [License](#license)
+3. [Configuration](#configuration)  
+4. [License](#license)
 
 ---
 
