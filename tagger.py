@@ -252,7 +252,7 @@ def _tag_artwork_for_file_thread(args):
 
 
 class ConcertTagger:
-    def __init__(self, concert_folder: str, config: dict, db:SQLiteEtreeDB):
+    def __init__(self, concert_folder: str, config: dict, db:SQLiteEtreeDB, debug:bool = False):
         """
         Initialize the ConcertTagger with a concert folder and a configuration dictionary.
         
@@ -272,7 +272,7 @@ class ConcertTagger:
         self.db = db
         self.NoMatch = False
         try:
-            self.etreerec = self._find_matching_recording()
+            self.etreerec = self._find_matching_recording(debug)
         except Exception as e:
             #raise(f'Error in ConcertTagger Init {e}')
             print (f'Error in ConcertTagger Init _find_matching_recording {e}')
@@ -340,19 +340,30 @@ class ConcertTagger:
             return default_path
         return None
     
-    def _find_matching_recording(self):
+    def _find_matching_recording(self, debug:bool = False):
         #TODO:Move this function to etreedb?
         if self.folder.checksums:
             matches,b_mismatch_exists = self.db.get_local_checksum_matches(self.folder.checksums)
+            if debug:
+                print(f'{self.folder.checksums=}')
+                print(f'{matches=}')
+                print(f'{b_mismatch_exists=}')
             checksummatches = set()
-            if not b_mismatch_exists: #return an empty list if one of the files is a mismatch
+            if not b_mismatch_exists: #return an empty list if one of the files does not have any matches
             #TODO: add explanation of mismatch, maybe another function call?
                 for match in matches:
+                    if debug:
+                        print(f'{match[0]=} {match[1]=}')
                     try:
-                        rec = EtreeRecording(self.db,match)
+                        rec = EtreeRecording(self.db,match[0],match[1])
                     except Exception as e:
-                        raise Exception (f'Error encoiuntered for {self.folderpath}')
+                        error = f'Error encountered for {self.folderpath}: {e}'
+                        if debug:
+                            print (error)
+                        raise Exception (f'Error encountered for {self.folderpath}: {e}')
                         #continue
+                    if debug:
+                        print(f'{rec.id=} {rec.md5key=} {rec.checksums=}')
                     for sig in rec.checksums:
                         if set(sig.checksumlist) == set(self.folder.checksums):
                             print (f"Match found: {sig.filename} md5key={sig.id} shnid={sig.shnid}")
@@ -363,8 +374,8 @@ class ConcertTagger:
             #print(list(checksummatches)) #change to return if using 2 functions?
             #TODO, make this a second function?
             etreerec = None
-            for shnid, dummy in checksummatches:
-                etreerec = EtreeRecording(self.db,shnid)
+            for shnid, md5key in checksummatches:
+                etreerec = EtreeRecording(self.db,shnid,md5key)
                 if self.folder.foldershnid == etreerec.id:
                     print(f'Exact match found for shnid {etreerec.id} in folder name') #might as well use the folder
                     logging.info(f'Exact match found for shnid {etreerec.id} in folder name')
@@ -629,55 +640,60 @@ class ConcertTagger:
                 album_year = extract_year(self.etreerec.date)
                 genretag = f"gd{str(album_year)}"
 
+        clear_existing_artwork = self.config["cover"].get("clear_existing_artwork", False)
+        retain_existing_artwork = self.config["cover"].get("retain_existing_artwork", True)
+
         #handle the artwork (folder.jpg file)
         if not self.artworkpath:
             logging.warning("No artwork file found to tag.")
-        clear_existing_artwork = self.config["cover"].get("clear_existing_artwork", False)
-        retain_existing_artwork = self.config["cover"].get("retain_existing_artwork", True)
-        artwork_path_str = str(self.artworkpath)        
-        dest_file = os.path.join(self.folderpath.as_posix(), "folder.jpg")
-        artwork_ext = os.path.splitext(artwork_path_str)[1].lower()  # Preserve original extension
-        artwork_formats = ["jpg", "jpeg", "png", "gif", "bmp", "webp"]     
+            artwork_path_str = None 
+        else: #don't mess with the artwork if we don't have any new artwork specified
 
-        existing_artworks = [
-            os.path.join(self.folderpath, f"folder.{ext}") 
-            for ext in artwork_formats if os.path.exists(os.path.join(self.folderpath, f"folder.{ext}"))
-        ]
-        if existing_artworks:
-            logging.info(f"Existing artwork files found: {existing_artworks}")  # Debugging log
+            artwork_path_str = str(self.artworkpath)        
+            dest_file = os.path.join(self.folderpath.as_posix(), "folder.jpg")
+            artwork_ext = os.path.splitext(artwork_path_str)[1].lower()  # Preserve original extension
+            artwork_formats = ["jpg", "jpeg", "png", "gif", "bmp", "webp"]     
+
+            existing_artworks = [
+                os.path.join(self.folderpath, f"folder.{ext}") 
+                for ext in artwork_formats if os.path.exists(os.path.join(self.folderpath, f"folder.{ext}"))
+            ]
+            if existing_artworks:
+                logging.info(f"Existing artwork files found: {existing_artworks}")  # Debugging log
 
 
-        # 🚨 **If artwork already exists and we are NOT clearing it, moake a note of this**
-        if existing_artworks and not clear_existing_artwork:
-             logging.info(f"Existing artwork found ({existing_artworks}), and replacement is disabled. Skipping copy.")
+            # 🚨 **If artwork already exists and we are NOT clearing it, moake a note of this**
+            if existing_artworks and not clear_existing_artwork:
+                logging.info(f"Existing artwork found ({existing_artworks}), and replacement is disabled. Skipping copy.")
 
-        # Determine correct artwork destination file based on existing format (if present)
- 
+            # Determine correct artwork destination file based on existing format (if present)
+            if existing_artworks:
+                existing_ext = os.path.splitext(existing_artworks[0])[1].lower()  # Use the first existing file's extension
+                dest_file = os.path.join(self.folderpath, f"folder{existing_ext}")
+            else:
+                dest_file = os.path.join(self.folderpath, f"folder{artwork_ext}")  # Default to the same format as new artwork
 
-        if existing_artworks:
-            existing_ext = os.path.splitext(existing_artworks[0])[1].lower()  # Use the first existing file's extension
-            dest_file = os.path.join(self.folderpath, f"folder{existing_ext}")
-        else:
-            dest_file = os.path.join(self.folderpath, f"folder{artwork_ext}")  # Default to the same format as new artwork
-
-        # If we are clearing existing artwork, handle renaming or deleting old files
-        if clear_existing_artwork and existing_artworks:
-            for existing_artwork in existing_artworks:
-                if retain_existing_artwork:  # Retain old artwork by renaming it
-                    backup_name = f"{existing_artwork}.old"
-                    os.rename(existing_artwork, backup_name)
-                    logging.info(f"Renamed {existing_artwork} to {backup_name}")
-                else:  # Delete existing artwork
-                    os.remove(existing_artwork)
-                    logging.info(f"Deleted existing artwork {existing_artwork}")
-
-        # 🚨 **Prevent overwriting if we already have artwork in the correct format**
-        if os.path.exists(dest_file):
-            logging.info(f"{dest_file} already exists. Not replacing due to retention policy.")
-        # Copy the new artwork file to the destination folder
-        else:
-            shutil.copy2(artwork_path_str, dest_file)
-            logging.info(f"Copied new artwork to {dest_file}.")
+            # If we are clearing existing artwork, handle renaming or deleting old files
+            if clear_existing_artwork and existing_artworks:
+                for existing_artwork in existing_artworks:
+                    if retain_existing_artwork:  # Retain old artwork by renaming it
+                        backup_name = f"{existing_artwork}.old"
+                        os.rename(existing_artwork, backup_name)
+                        logging.info(f"Renamed {existing_artwork} to {backup_name}")
+                    else:  # Delete existing artwork
+                        os.remove(existing_artwork)
+                        logging.info(f"Deleted existing artwork {existing_artwork}")            
+            # 🚨 **Prevent overwriting if we already have artwork in the correct format**
+            try:
+                if os.path.exists(dest_file):
+                    logging.info(f"{dest_file} already exists. Not replacing due to retention policy.")
+                # Copy the new artwork file to the destination folder
+                else:
+                    shutil.copy2(artwork_path_str, dest_file)
+                    logging.info(f"Copied new artwork to {dest_file}.")
+            except FileNotFoundError as e:
+                logging.error(f"Error copying artwork file {artwork_path_str} to {dest_file}: {e}")
+        #END of artwork handling
 
         # Build argument list using the files from your folder's musicfiles attribute.
         if self.config["preferences"]["segue_string"]:
@@ -790,6 +806,26 @@ class ConcertTagger:
                 else:
                     logging.error(f'Error Processing folder {concert_folder}')
 
+    def build_show_inserts(self):
+        """
+        Build show inserts for the concert folder.
+        """
+        shnid = self.etreerec.id
+        records = []
+        for file in self.folder.musicfiles:
+            #shnid_val, disc_number, track_number, title, fingerprint, bit_depth, frequency, length_val, channels, filename = rec
+            records.append(( shnid,
+                file.disc,
+                file.tracknum,
+                file.title,
+                file.checksum,
+                file.audio.info.bits_per_sample,
+                file.audio.info.sample_rate,
+                file.length,
+                file.audio.info.channels,
+                file.name))
+        return records
+    
 if __name__ == "__main__":
     from time import perf_counter
     start_time = perf_counter()
@@ -812,19 +848,20 @@ if __name__ == "__main__":
     #     concert_folders.extend(sorted([f.path.replace('\\','/') for f in os.scandir(parentfolder) if f.is_dir()]))
 
 #single parent folder
-    parentfolder = r'X:\Downloads\_FTP\gdead.9999.updates'
+    parentfolder = r'X:\Downloads\_FTP\gdead.9999.updates_imported'
     concert_folders = sorted([f.path.replace('\\','/') for f in os.scandir(parentfolder) if f.is_dir()])
 
 #if using a single folder, or specific folders use a python list of path(s):
 #best for getting started and testing
-    # concert_folders = [
-    #        r"M:\To_Tag\gd1966\gd1966-xx.xx.136658.acidtest#3.sbd.mr.datflac1644"
-    #  ]    
+#     concert_folders = [
+#            r"X:\Downloads\_FTP\gdead.9999.updates\gd1977-05-17.18554.Tuscaloosa,AL.sbd.weiner.flac16"
+# ,r"X:\Music\Concerts\GD_Tagged\gd1976-10-01.170521.Indianapolis,IN.mtx.seamons.ht174.flac16"
+#      ]    
     #concert_folders must be a list of folders that contain folders. 
     #Don't pass without parent directory, it won't be good
     #TODO, add some type of check when scanning the first folder
 
-    ConcertTagger.tag_shows(concert_folders, etreedb, config, clear_existing_tags=True)
+    ConcertTagger.tag_shows_debug(concert_folders, etreedb, config, clear_existing_tags=True)
 
     etreedb.close
     

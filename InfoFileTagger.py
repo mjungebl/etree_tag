@@ -20,7 +20,7 @@ The script can be run as a standalone program, processing a specified directory 
 """
 import os
 import re
-import argparse
+#import argparse
 import logging
 from glob import glob
 from mutagen.flac import FLAC
@@ -279,7 +279,7 @@ def parse_info_file(directory_path):
     #if not info_files:
      #   logging.warning("No info file with shnid found in the directory, checking for a txt file")
     info_files = [f for f in os.listdir(directory_path)
-                    if f.endswith(".txt")]    
+                    if f.lower().endswith(".txt")]    
     # print('-------------------------------------------------------------------------------')
     # for info in info_files:
     #     print(info)
@@ -414,7 +414,7 @@ def parse_info_file(directory_path):
                 for line in lines:
                     if 'discs audio' in line.lower():
                         continue
-                    if line.strip().lower() in ('24 bit', '16 bit'):
+                    if line.strip().lower() in ('24 bit', '16 bit') or line.strip().lower().startswith('16-bit') or line.strip().lower().startswith('24-bit'):
                         continue
                     if is_valid_date(line.split()[0].strip()):
                         continue
@@ -526,7 +526,7 @@ def parse_info_file(directory_path):
                 if len(track_entries) != n_files:
                     error_message = error_message + f"Number of track entries ({len(track_entries)}) does not match number of FLAC files ({n_files}). "
                 if not b_inorder:
-                    error_message = error_message + f"Tracks are not in order. "
+                    error_message = error_message + "Tracks are not in order. "
                     for track in track_entries:
                         print (track)
                 #print(track_entries)
@@ -615,7 +615,7 @@ def all_flac_tagged(directory):
     return True
 
 
-def main():
+def tag_folder(directory:str, add_line_numbers:str=None):
     """
     Main function to process FLAC files and their track info.
     This function sets up logging, parses command-line arguments, and processes
@@ -645,19 +645,19 @@ def main():
         ]
     )
     
-    parser = argparse.ArgumentParser(description="Process FLAC files and their track info.")
-    parser.add_argument("directory", help="Directory containing the FLAC files and the info file.")
-    parser.add_argument("--add-line-numbers", help="Optional: File path for which to add sequential line numbers.", default=None)
+    #parser = argparse.ArgumentParser(description="Process FLAC files and their track info.")
+    #parser.add_argument("directory", help="Directory containing the FLAC files and the info file.")
+    #parser.add_argument("--add-line-numbers", help="Optional: File path for which to add sequential line numbers.", default=None)
     
-    args = parser.parse_args()
-    directory = args.directory
+    #args = parser.parse_args()
+    #directory = args.directory
 
     if not os.path.isdir(directory):
         logging.error(f"{directory} is not a valid directory.")
         return
 
-    if args.add_line_numbers:
-        add_line_numbers(args.add_line_numbers)
+    if add_line_numbers:
+        add_line_numbers(add_line_numbers)
     if not all_flac_tagged(directory): #don't bother if it is tagged
         try:
             track_mapping = parse_info_file(directory)
@@ -671,7 +671,7 @@ def main():
     else:
         logging.info(f"Files are already tagged in {directory}")
 
-
+    return all_flac_tagged(directory)
 
 
 def clear_title_tag_in_folder(directory_path):
@@ -774,31 +774,30 @@ def read_file_to_list(file_name):
         return []
 
 if __name__ == "__main__":
-    import sys
     from pathlib import Path
-    #dirname = r"M:/To_Tag/gd1977"
+    #dirname = r"X:/Downloads/_FTP/gdead.9999.updates/"
     needfixing = []
     #folderlist = [Path(f).as_posix() for f in os.scandir(dirname) if f.is_dir()]
     folderlist = [
-          r"M:/To_Tag/gd1960s/gd1966-01-08.106505.sbd.lestatkatt.flac16"
+          r"X:\Downloads\_Extract\Neil Young\Neil Young Archives Concerts\1969-10-16 Canterbury, Ann Arbor (NYA) TC\Neil Young 10.16.69 3rd Set"
          ]
     #folderlist = read_file_to_list('untaggged_list.txt')
     for fldr in folderlist:
-        fldr = Path(fldr).as_posix()
-        sys.argv = [
-            "flac_tagging.py",                 # script name (dummy)
-            #
-            fldr.strip()
-            #"--add-line-numbers", "/path/to/your/textfile.txt"  # optional argument
-        ]
-        #clear_song_specific_tags_in_folder(fldr)
+        fldr = Path(fldr).as_posix().strip()
+        # sys.argv = [
+        #     "flac_tagging.py",                 # script name (dummy)
+        #     #
+        #     fldr.strip()
+        #     #"--add-line-numbers", "/path/to/your/textfile.txt"  # optional argument
+        # ]
+        clear_song_specific_tags_in_folder(fldr)
         #clear_title_tag_in_folder(fldr)
         folder_only = Path(fldr).name
         print(f'{folder_only}')
             #problem_folders.append(folder_only)
         #if shnid:
         #    save_text_file(shnid,fldr)          
-        main()
+        tag_folder(fldr)
         if not all_flac_tagged(fldr) and len(folderlist) > 1:
           
             needfixing.append(fldr)

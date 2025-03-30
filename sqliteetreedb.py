@@ -3,6 +3,8 @@ import logging
 import datetime
 import csv
 import os
+import shutil
+import zipfile
 
 class SQLiteEtreeDB:
     def __init__(self, db_path="db/etree_tag_db.db", log_level=logging.ERROR):
@@ -358,7 +360,10 @@ class SQLiteEtreeDB:
 
     def get_ffp_shnids_checksum(self, checksum):
         """Retrieves records from 'signatures' table where checksum matches.
-            format is [(shnid,md5key)]
+        args:
+            checksum (str): The checksum to search for.
+        Returns:
+            list: A list of tuples [(shnid, md5key),].
         """
         try:
             self.cursor.execute("""
@@ -477,7 +482,7 @@ class SQLiteEtreeDB:
 
         return cleaned, gazinta
 
-    def insert_track_metadata(self, shnid, records, overwrite=False):
+    def insert_track_metadata(self, shnid, records, overwrite=False, md5key:int=None, debug = False):
         """
         Inserts a list of track_metadata records for the given shnid.
 
@@ -503,16 +508,21 @@ class SQLiteEtreeDB:
         records (list of tuple): A list of track_metadata records.
         overwrite (bool, optional): If True, overwrite any existing records. Defaults to False.
         """
+        if debug:
+            print(f"shnid: {shnid} md5key: {md5key} overwrite: {overwrite}")
+        col = "md5key" if md5key is not None else "shnid"
+        value = md5key if md5key is not None else shnid        
         try:
             if not overwrite:
-                self.cursor.execute("SELECT 1 FROM track_metadata WHERE shnid = ?", (shnid,))
+                # Check if any records exist for the given shnid.
+                self.cursor.execute(f"SELECT 1 FROM track_metadata WHERE {col} = ?", (value,))
                 if self.cursor.fetchone() is not None:
                     # Records already exist for this shnid, so we skip the update.
-                    logging.info(f"Records for shnid {shnid} already exist. Skipping update.")
+                    logging.warning(f"Records for {col} {value} already exist. Skipping update.")
                     return
             else:
                 # Delete existing records for the given shnid.
-                self.cursor.execute("DELETE FROM track_metadata WHERE shnid = ?", (shnid,))
+                self.cursor.execute(f"DELETE FROM track_metadata WHERE {col} = ?", (value,))
 
             # Transform each record by cleaning the title field and appending title_clean and gazinta.
             new_records = []
@@ -521,17 +531,23 @@ class SQLiteEtreeDB:
                 # (shnid, disc_number, track_number, title, fingerprint, bit_depth, frequency, length, channels, filename)
                 shnid_val, disc_number, track_number, title, fingerprint, bit_depth, frequency, length_val, channels, filename = rec
                 title_clean, gazinta = self.clean_title_field(title)
-                new_record = (shnid_val, disc_number, track_number, title, fingerprint, bit_depth, frequency, length_val, channels, filename, title_clean, gazinta)
+                if md5key is None:
+                    new_record = (shnid_val, disc_number, track_number, title, fingerprint, bit_depth, frequency, length_val, channels, filename, title_clean, gazinta)
+                else:
+                    new_record = (shnid_val, disc_number, track_number, title, fingerprint, bit_depth, frequency, length_val, channels, filename, title_clean, gazinta, md5key)
                 new_records.append(new_record)
-
+            if debug:
+                print(f"new_records: {new_records}")
             # Insert the new records with the new fields.
-            insert_sql = """
+            insert_sql = f"""
                 INSERT INTO track_metadata (
                     shnid, disc_number, track_number, title, fingerprint,
                     bit_depth, frequency, length, channels, filename,
-                    title_clean, gazinta
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    title_clean, gazinta {", md5key)" if md5key is not None else ")"} 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?{", ?)" if md5key is not None else ")"}
             """
+            if debug:
+                print(f"insert_sql: {insert_sql}")
             self.cursor.executemany(insert_sql, new_records)
             self.conn.commit()
         except Exception as e:
@@ -539,25 +555,38 @@ class SQLiteEtreeDB:
             self.conn.rollback()
 
 
-    def get_track_metadata(self, shnid):
+    def get_track_metadata(self, shnid:int, md5key:int=None):
         """
         Retrieves all track_metadata records for the given shnid.
         
         Args:
         shnid (int): The shnid whose records you want to retrieve.
+        md5key (int, optional): If provided, retrieves records for this md5key instead of shnid.
+        If both are provided, md5key takes precedence.
         
         Returns:
         list of tuples: Each tuple corresponds to a record with the following fields:
             (shnid, disc_number, track_number, title, fingerprint, bit_depth, frequency, length, channels, filename, md5key, title_clean, gazinta)
         """
+        # try:
+        #     self.cursor.execute("""
+        #         SELECT shnid, disc_number, track_number, title, fingerprint, bit_depth, frequency, length, channels, filename, md5key, title_clean, gazinta
+        #         FROM track_metadata
+        #         WHERE shnid = ?
+        #     """, (shnid,)) 
+            # rows = self.cursor.fetchall()
         try:
-            self.cursor.execute("""
+            # If md5key is provided, use it to filter the query.
+            col = "md5key" if md5key is not None else "shnid"
+            value = md5key if md5key is not None else shnid
+
+            query = f"""
                 SELECT shnid, disc_number, track_number, title, fingerprint, bit_depth, frequency, length, channels, filename, md5key, title_clean, gazinta
                 FROM track_metadata
-                WHERE shnid = ?
-            """, (shnid,))
-            
-            rows = self.cursor.fetchall()
+                WHERE {col} = ?
+            """
+            self.cursor.execute(query, (value,))     
+            rows = self.cursor.fetchall()       
             return rows
         except Exception as e:
             logging.error(f"Error retrieving track metadata for shnid {shnid}: {e}")
@@ -591,23 +620,30 @@ class SQLiteEtreeDB:
             self.conn.rollback()
 
 
-    def get_checksum_files(self, shnid):
+    def get_checksum_files(self, shnid:int,md5key:int=None):
         """
-        Retrieves all records from the checksum_files table for the given shnid.
-        
+        Retrieves all records from the checksum_files table for the given shnid or md5key. If both are provided, md5key takes precedence.
         Args:
             shnid (int): The shnid for which to retrieve the records.
-        
+            md5key (int, optional): If provided, retrieves records for this md5key instead of shnid.
         Returns:
             list of tuples: Each tuple is of the form (md5key, shnid, label, filename)
                             If an error occurs, an empty list is returned.
         """
+        col = "md5key" if md5key is not None else "shnid"
+        value = md5key if md5key is not None else shnid
+        query = f"""
+            SELECT md5key, shnid, label, filename
+            FROM checksum_files
+            WHERE {col} = ?
+        """                
         try:
-            self.cursor.execute("""
-                SELECT md5key, shnid, label, filename
-                FROM checksum_files
-                WHERE shnid = ?
-            """, (shnid,))
+            # self.cursor.execute("""
+            #     SELECT md5key, shnid, label, filename
+            #     FROM checksum_files
+            #     WHERE shnid = ?
+            # """, (shnid,))
+            self.cursor.execute(query, (value,))
             records = self.cursor.fetchall()
             return records
         except Exception as e:
@@ -749,7 +785,9 @@ class SQLiteEtreeDB:
 
     def get_local_checksum_matches(self,checksums:list):
         """
-            file_details (input) is a list that matches what was retiieved from readflacmetadata_folder_v2
+        Retrieves all records from the 'signatures' table for the given checksums.
+        Args:
+            checksums (list): A list of checksums to search for.
             format for output is [(shnid,md5key),]
         """
 
@@ -763,11 +801,11 @@ class SQLiteEtreeDB:
                 localshnids = self.get_ffp_shnids_checksum(checksum)
                 if localshnids:
                     for item in localshnids:
-                        checksum_matches.add(item[0])
+                        checksum_matches.add(item)
                 else:
-                    #if we have a file that toes not match, go ahead and check to see if there are more matches.
+                    #if we have a file that does not match, go ahead and check to see if there are more matches.
                     b_unmatched_exists = True
-                #TO_DO, add local check first
+
         except Exception as e:
             logging.error(f"error in get_local_checksum_matches: {e}")
             raise ValueError(f'Error in file get_local_checksum_matches: {e}')
@@ -860,8 +898,9 @@ class ChecksumFile:
         return etreedb.get_checksums_only_by_md5key(self.id)      
 
 class EtreeRecording:
-    def __init__(self,etreedb:SQLiteEtreeDB,shnid:int):
+    def __init__(self,etreedb:SQLiteEtreeDB,shnid:int,md5key:int=None):
         self.id = shnid
+        self.md5key = md5key
         details = etreedb.get_shnid_details(self.id)
         self.date = None
         if details is None:
@@ -890,7 +929,7 @@ class EtreeRecording:
         return self._checksums  
             
     def _load_checksums(self,etreedb:SQLiteEtreeDB):
-        checksumlist = etreedb.get_checksum_files(self.id)
+        checksumlist = self.db.get_checksum_files(self.id,self.md5key)
         return [ChecksumFile(etreedb,x[0]) for x in checksumlist]
 
     @property
@@ -900,7 +939,7 @@ class EtreeRecording:
         return self._tracks          
 
     def _load_tracks(self,etreedb:SQLiteEtreeDB):
-        tracklist = etreedb.get_track_metadata(self.id)
+        tracklist = etreedb.get_track_metadata(self.id,self.md5key)
         #print(tracklist)
         return [Track(*track) for track in tracklist]
 
@@ -945,9 +984,52 @@ class Track:
         self.gazinta = gazinta
         self.bitabbrev = bit_depth+'-'+frequency.rstrip("0")
 
+def copy_file(source_path: str, copy_path: str):
+    """
+    Copies a file from source_path to copy_path.
+    Overwrites the destination file if it exists.
+    Raises a ValueError if the source and destination paths are identical.
+    
+    Args:
+        source_path (str): The full path of the file to copy.
+        copy_path (str): The full path where the file should be copied.
+    """
+    source_abs = os.path.abspath(source_path)
+    copy_abs = os.path.abspath(copy_path)
+    
+    if source_abs == copy_abs:
+        raise ValueError("Error: Source and destination paths are identical.")
+    
+    try:
+        shutil.copy2(source_abs, copy_abs)
+        print(f"Successfully copied from '{source_abs}' to '{copy_abs}'.")
+    except Exception as e:
+        print(f"Error copying file from '{source_abs}' to '{copy_abs}': {e}")
+        raise
+
+def create_zip_archive(zip_name: str, items: list):
+    """
+    Creates a zip file with the specified name and adds all items in the list.
+    Items are expected to be full paths to files. The file will be overwritten
+    if it already exists.
+
+    Args:
+        zip_name (str): The path and name for the output zip archive.
+        items (list): A list of file paths to add to the archive.
+    """
+    with zipfile.ZipFile(zip_name, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        for item in items:
+            if os.path.exists(item):
+                # Use os.path.basename(item) as arcname to store only the file name
+                zipf.write(item, arcname=os.path.basename(item))
+            else:
+                print(f"Warning: {item} does not exist and will be skipped.")
+    print(f"Successfully created zip archive: {zip_name}")
 
 if __name__ == "__main__":
     db_path="db/etree_scrape.db"
+    db_copy_path = "db/etree_tag_db.db"
+    zip_path = "db/etree_tag_db.zip"
     db = SQLiteEtreeDB(db_path,log_level=logging.INFO)  # Change log level as needed
     #rec = EtreeRecording(db,124439)
     #rec.build_info_file()  #only works if the track metadata is populated. 
@@ -957,3 +1039,5 @@ if __name__ == "__main__":
     #db.parse_venuesource()
     db.dump_sqlite_to_csv()
     db.close()
+    copy_file(db_path,db_copy_path)
+    create_zip_archive(zip_path,[db_copy_path])
