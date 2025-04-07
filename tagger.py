@@ -542,7 +542,6 @@ class ConcertTagger:
         suffix = config["album_tag"].get("suffix",None)
         title_year = extract_year(self.etreerec.date)
         show_date = self.etreerec.date
-
         #if the date is in the incorrect format, make an attempt to fix it for the title
         if title_year:
             if str(title_year) != self.etreerec.date[0:4]:

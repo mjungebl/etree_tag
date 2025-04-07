@@ -109,7 +109,8 @@ class SQLiteEtreeDB:
                 (12, 'Garcia'),
                 (847,'Grateful Dead Compilations'),
                 (28494,'Grateful Dead Interviews'),
-                (8515,'Pigpen')
+                (8515,'Pigpen'),
+                (40644,'Furthur')
             ]
             self.cursor.executemany("INSERT OR REPLACE INTO artists (artistid, ArtistName) VALUES (?, ?);", artists_data)
 
