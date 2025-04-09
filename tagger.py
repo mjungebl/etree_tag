@@ -93,7 +93,7 @@ def extract_year(date_str):
     return None
 
 
-def remove_match_from_lists(key_list, list2, list3, item):
+def remove_match_from_lists(lists, item):
     """
     Remove all occurrences of an item from the master list,
     and remove the corresponding elements from list2 and list3.
@@ -108,15 +108,19 @@ def remove_match_from_lists(key_list, list2, list3, item):
         int: The number of occurrences removed.
     """
     # Get all indices where the item occurs in the master list.
-    indices_to_remove = [i for i, v in enumerate(key_list) if v == item]
-    
+    for list in lists:
+        if item not in list:
+            continue
+        indices_to_remove = [i for i, v in enumerate(list) if v == item]
+        break #we have the items to remove, exit the loop
+
     # Remove items in reverse order to avoid index shifting issues.
     for i in reversed(indices_to_remove):
-        key_list.pop(i)
-        list2.pop(i)
-        list3.pop(i)
+        for list in lists:
+            if i < len(list):
+                list.pop(i)
     
-    return (key_list, list2, list3)
+    return (lists)
 
 def _tag_file_thread(args):
     """
@@ -475,6 +479,7 @@ class ConcertTagger:
 
 
     def tag_album(self, clear_existing: bool = True):
+        ####DEPRECATED####
         #TODO customise this string (separate function?)
         #print(f'{self.etreerec.date=}')
         album = f'{self.etreerec.date} {self.etreerec.etreevenue} {'('+self.folder.recordingtype+') ' if self.folder.recordingtype else ''}{'['+str(self.folder.musicfiles[0].audio.info.bits_per_sample)+'-'+
@@ -537,9 +542,12 @@ class ConcertTagger:
         include_venue = config["album_tag"].get("include_venue",True)
         include_city = config["album_tag"].get("include_city",True)
         include_shnid = config["album_tag"].get("include_shnid",True)
-        order = config["album_tag"].get("order",None)
-        prefix = config["album_tag"].get("prefix",None)
-        suffix = config["album_tag"].get("suffix",None)
+        order_temp = config["album_tag"].get("order",None)
+        order = order_temp.copy()
+        prefix_temp = config["album_tag"].get("prefix",None)
+        prefix = prefix_temp.copy()
+        suffix_temp = config["album_tag"].get("suffix",None)
+        suffix = suffix_temp.copy()
         title_year = extract_year(self.etreerec.date)
         show_date = self.etreerec.date
         #if the date is in the incorrect format, make an attempt to fix it for the title
@@ -576,21 +584,20 @@ class ConcertTagger:
             include_bitrate = False
         #clean up the order list to remove any empty strings or None values
         if (not include_venue or not venue) and 'venue' in order:
-            remove_match_from_lists(order, prefix, suffix, 'venue')
+            remove_match_from_lists([order, prefix, suffix], 'venue')
         if (not include_city or not city) and 'city' in order:
-            remove_match_from_lists(order, prefix, suffix, 'city')
+            remove_match_from_lists([order, prefix, suffix], 'city')
         #no need to check for an empty shnid or bitrate, won't get here if no match or no files
         if not include_shnid and 'shnid' in order: 
-            remove_match_from_lists(order, prefix, suffix, 'shnid')
+            remove_match_from_lists([order, prefix, suffix], 'shnid')
         if not include_bitrate and 'bitrate' in order:
-            remove_match_from_lists(order, prefix, suffix, 'bitrate')
+            remove_match_from_lists([order, prefix, suffix], 'bitrate')
         format_str = ''
         if len(order) == len(prefix) == len(suffix) and order:
             for i in range(len(order)):
                 format_str = format_str + f"{prefix[i]}{'{'}{order[i]}{'}'}{suffix[i]}"
         else :
             format_str = None
-        #print(f'{format_str=}')
         album = None
         try:
             if format_str:
