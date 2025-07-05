@@ -289,16 +289,25 @@ class ConcertTagger:
         self.artworkpath = None
         self.errormsg = None
 
-        if not self.NoMatch: #doh, double negative
-            #TODO fix this for other artists, config file work will be needed as well.
+        if not self.NoMatch:
             try:
-                if self.etreerec.date and self.etreerec.artist == 'Grateful Dead':
-                    self.artworkpath = self._find_artwork('gd',self.etreerec.date)
+                if self.etreerec.date and self.etreerec.artist_abbrev:
+                    self.artworkpath = self._find_artwork(
+                        self.etreerec.artist_abbrev, self.etreerec.date
+                    )
             except Exception as e:
-                logging.error(f'Exception: {e} in _find_artwork for {self.folderpath.as_posix()}')
-                print(f'Exception: {e} in _find_artwork for {self.folderpath.as_posix()}')
-                self.errormsg = f'No Matching recording found in database for folder {self.folderpath.as_posix()}'
-                raise Exception(f'{e} in _find_artwork for {self.folderpath.as_posix()}')
+                logging.error(
+                    f'Exception: {e} in _find_artwork for {self.folderpath.as_posix()}'
+                )
+                print(
+                    f'Exception: {e} in _find_artwork for {self.folderpath.as_posix()}'
+                )
+                self.errormsg = (
+                    f'No Matching recording found in database for folder {self.folderpath.as_posix()}'
+                )
+                raise Exception(
+                    f'{e} in _find_artwork for {self.folderpath.as_posix()}'
+                )
                 
         else:
             logging.error(f'No Matching recording found in database for folder {self.folderpath.as_posix()}')

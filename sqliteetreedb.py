@@ -98,21 +98,31 @@ class SQLiteEtreeDB:
             self.cursor.execute("""
                 CREATE TABLE IF NOT EXISTS artists (
                     artistid INTEGER PRIMARY KEY,
-                    ArtistName TEXT UNIQUE ON CONFLICT IGNORE
+                    ArtistName TEXT UNIQUE ON CONFLICT IGNORE,
+                    ArtistAbbrev TEXT
                 )
             """)
 
+            # Ensure the ArtistAbbrev column exists for older databases
+            self.cursor.execute("PRAGMA table_info(artists)")
+            artist_columns = {row[1] for row in self.cursor.fetchall()}
+            if "ArtistAbbrev" not in artist_columns:
+                self.cursor.execute("ALTER TABLE artists ADD COLUMN ArtistAbbrev TEXT")
+
             # Insert predefined artists, no need for a csv yet
             artists_data = [
-                (2, 'Grateful Dead'),
-                (4, 'Phish'),
-                (12, 'Garcia'),
-                (847,'Grateful Dead Compilations'),
-                (28494,'Grateful Dead Interviews'),
-                (8515,'Pigpen'),
-                (40644,'Furthur')
+                (2, 'Grateful Dead', 'gd'),
+                (4, 'Phish', 'ph'),
+                (12, 'Garcia', 'jg'),
+                (847, 'Grateful Dead Compilations', 'gdc'),
+                (28494, 'Grateful Dead Interviews', 'gdi'),
+                (8515, 'Pigpen', 'pp'),
+                (40644, 'Furthur', 'fur')
             ]
-            self.cursor.executemany("INSERT OR REPLACE INTO artists (artistid, ArtistName) VALUES (?, ?);", artists_data)
+            self.cursor.executemany(
+                "INSERT OR REPLACE INTO artists (artistid, ArtistName, ArtistAbbrev) VALUES (?, ?, ?);",
+                artists_data,
+            )
 
 
             self.cursor.execute("""
@@ -422,6 +432,19 @@ class SQLiteEtreeDB:
         except sqlite3.Error as e:
             logging.error(f"SQLite error in get_artists_dict: {e}")
             return {}
+
+    def get_artist_abbrev(self, artist_id):
+        """Return the abbreviation for the given artist_id."""
+        try:
+            self.cursor.execute(
+                "SELECT ArtistAbbrev FROM artists WHERE artistid = ?;",
+                (artist_id,),
+            )
+            result = self.cursor.fetchone()
+            return result[0] if result else None
+        except sqlite3.Error as e:
+            logging.error(f"SQLite error in get_artist_abbrev: {e}")
+            return None
 
 
     def clean_title_field(self,title):
@@ -908,19 +931,17 @@ class EtreeRecording:
         self.md5key = md5key
         details = etreedb.get_shnid_details(self.id)
         self.date = None
+        self.artist_abbrev = None
         if details is None:
             self.date = None  # or set a default value / log a warning
             logging.error(f"No event details found for match: {self.id}")
             raise ValueError(f"No event details found for match: {self.id}")
         else:
-            self.date = details[0]        
-        # if details:
-        #     self.date = details[0]
-        # else:
-        #     self.date = None
+            self.date = details[0]
             self.etreevenue = details[1]
             self.source = details[2]
             self.artist = etreedb.get_artist_name(details[3])
+            self.artist_abbrev = etreedb.get_artist_abbrev(details[3])
             self.venue = details[4]
             self.city = details[5]
         self._checksums = None
