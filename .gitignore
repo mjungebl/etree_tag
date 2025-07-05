@@ -1,0 +1,9 @@
+__pycache__/*.pyc
+logs/*
+tag_import.log
+tag_log.log
+mismatched_folders.txt
+flac_tagging.log
+db/extract/*
+db/etree_scrape.db
+db/etree_tag_db.db

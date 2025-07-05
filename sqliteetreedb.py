@@ -114,10 +114,10 @@ class SQLiteEtreeDB:
                 (2, 'Grateful Dead', 'gd'),
                 (4, 'Phish', 'ph'),
                 (12, 'Garcia', 'jg'),
-                (847, 'Grateful Dead Compilations', 'gdc'),
-                (28494, 'Grateful Dead Interviews', 'gdi'),
-                (8515, 'Pigpen', 'pp'),
-                (40644, 'Furthur', 'fur')
+                (847, 'Grateful Dead Compilations', 'gd'),
+                (28494, 'Grateful Dead Interviews', 'gd'),
+                (8515, 'Pigpen', 'pigpen'),
+                (40644, 'Furthur', 'furthur')
             ]
             self.cursor.executemany(
                 "INSERT OR REPLACE INTO artists (artistid, ArtistName, ArtistAbbrev) VALUES (?, ?, ?);",
