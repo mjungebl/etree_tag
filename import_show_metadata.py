@@ -160,7 +160,9 @@ if __name__ == "__main__":
 
     sqlitepath_scrape = Path(r"db/etree_scrape.db").as_posix()
     etreedb = SQLiteEtreeDB(sqlitepath_scrape)
-    dirnm = r'X:\Downloads\_FTP\gdead.9999.updates_imported'
+
+    dirnm = r'X:\Downloads\_FTP\_Concerts_Unofficial\_renamed2\GD_TAGGED'
+
     directorylist = [f.path.replace('\\','/') for f in os.scandir(dirnm) if f.is_dir()] 
     print(directorylist)
     imported_shows,existing_shows = import_show_folders(directorylist, etreedb, config)

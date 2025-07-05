@@ -414,7 +414,13 @@ def parse_info_file(directory_path):
                 for line in lines:
                     if 'discs audio' in line.lower():
                         continue
-                    if line.strip().lower() in ('24 bit', '16 bit') or line.strip().lower().startswith('16-bit') or line.strip().lower().startswith('24-bit'):
+                    if line.strip().lower() in ('24 bit', '16 bit') or\
+                        line.strip().lower().startswith('16-bit') or \
+                        line.strip().lower().startswith('24-bit') or\
+                        line.strip().lower().startswith('16bit') or\
+                        line.strip().lower().startswith('24bit') or\
+                        line.strip().lower().startswith('24 bit/44.1') or\
+                        line.strip().lower().startswith('16 bit/44.1'):
                         continue
                     if is_valid_date(line.split()[0].strip()):
                         continue
