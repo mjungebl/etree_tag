@@ -96,7 +96,10 @@ suffix = ['','','','',')',']']
 [cover]
 clear_existing_artwork = false # Clears existing artwork tags and sets a new one
 retain_existing_artwork = true
-defaultimage_path = 'GD_Art/default.jpg'
+
+[cover.default_images]
+# Map artist abbreviations to fallback artwork.
+gd = 'GD_Art/default.jpg'
 
 [cover.artwork_folders]
 gd = ['GD_Art/EE_Artwork/', 'GD_Art/TV_Artwork/']

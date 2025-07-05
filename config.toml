@@ -39,12 +39,15 @@ suffix = ['','','','',')',']']
 [cover]
 clear_existing_artwork = false # Clears existing artwork tags and sets a new one
 retain_existing_artwork = true # If an existing folder.{ext} file exists, append its name w/".old", even if the tag is overwritten
-defaultimage_path = 'GD_Art/default.jpg'
+
+[cover.default_images]
+# Map artist abbreviations to fallback artwork.
+gd = 'GD_Art/default.jpg'
 
 [cover.artwork_folders]
 gd = ['GD_Art/EE_Artwork/', 'GD_Art/TV_Artwork/']
 # Add additional entries keyed by artist abbreviation.
-# If an abbreviation is missing, tagging will continue without artwork.
+# If an abbreviation is missing, artwork tagging is skipped for that artist.
 
 
 

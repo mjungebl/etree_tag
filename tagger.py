@@ -269,11 +269,13 @@ class ConcertTagger:
             - artwork_folders: a dictionary mapping artist abbreviations to
               lists of directories (relative or absolute) to search for artwork.
               If an abbreviation has no entry, artwork tagging is skipped.
-            - defaultimage_path: the path to a default artwork image.
+            - default_images: a mapping of artist abbreviations to fallback
+              artwork paths.
         
         Args:
             concert_folder (str): Path to the folder containing concert files.
-            config (dict): A dictionary with keys "artwork_folders" and "defaultimage_path".
+            config (dict): A dictionary with keys "artwork_folders" and
+                "default_images".
         """
         self.config = config
         self.folderpath = Path(concert_folder)
@@ -294,7 +296,7 @@ class ConcertTagger:
         # artist abbreviations to lists of directories. If an abbreviation is
         # not present, no artwork search will be performed for that artist.
         self.artwork_folders_map = config["cover"].get("artwork_folders", {})
-        self.defaultimage_path = config["cover"].get("defaultimage_path")
+        self.default_images_map = config["cover"].get("default_images", {})
         self.artwork_folders = []
         self.artworkpath = None
         self.errormsg = None
@@ -308,15 +310,28 @@ class ConcertTagger:
                     self.artwork_folders = self.artwork_folders_map.get(
                         self.etreerec.artist_abbrev, []
                     )
-                    if not self.artwork_folders:
-                        logging.info(
-                            f"No artwork directories configured for artist "
-                            f"{self.etreerec.artist_abbrev}"
-                        )
-                    else:
+                    self.artworkpath = None
+                    try:
                         self.artworkpath = self._find_artwork(
-                            self.etreerec.artist_abbrev, self.etreerec.date
+                            self.etreerec.artist_abbrev,
+                            self.etreerec.date,
                         )
+                    except FileNotFoundError as fnf_err:
+                        logging.error(str(fnf_err))
+                        raise
+                    if not self.artworkpath and not (
+                        self.artwork_folders or self.default_images_map.get(self.etreerec.artist_abbrev)
+                    ):
+                        logging.info(
+                            f"No artwork directories configured for artist {self.etreerec.artist_abbrev}"
+                        )
+                    elif not self.artworkpath:
+                        raise FileNotFoundError(
+                            f"No artwork found for {self.etreerec.artist_abbrev} on {self.etreerec.date}"
+                        )
+            except FileNotFoundError as e:
+                logging.error(str(e))
+                raise
             except Exception as e:
                 logging.error(
                     f'Exception: {e} in _find_artwork for {self.folderpath.as_posix()}'
@@ -355,8 +370,11 @@ class ConcertTagger:
             concert_date (str): The concert date in YYYY-MM-DD format.
         
         Returns:
-            Path or None: The path to the artwork file if found, otherwise the default artwork file
-                          (if it exists), or None.
+            Path or None: The path to the artwork file if found. If no match is
+            found but a per-artist default image is configured, that path is
+            returned. If the configured default does not exist, a
+            ``FileNotFoundError`` is raised. If no default is configured,
+            ``None`` is returned.
         """
         year = concert_date.split("-")[0]
         for folder in self.artwork_folders:
@@ -369,10 +387,20 @@ class ConcertTagger:
                     # Optionally, sort candidates and return the first one.
                     candidates.sort()
                     return candidates[0]
-        # If nothing was found in the artwork folders, fall back to the default image.
-        default_path = Path(self.defaultimage_path)
-        if default_path.exists() and default_path.is_file():
-            return default_path
+        # If nothing was found in the artwork folders, check for a per-artist
+        # default image. If configured but the file does not exist, raise an
+        # error so the caller knows artwork tagging cannot proceed.
+        default_path_str = self.default_images_map.get(artist_abbr)
+        if default_path_str:
+            default_path = Path(default_path_str)
+            if default_path.exists() and default_path.is_file():
+                return default_path
+            raise FileNotFoundError(
+                f"Default artwork {default_path} not found for artist {artist_abbr}"
+            )
+
+        # If no default path was configured, return None so the caller can
+        # decide whether to skip tagging or raise an error.
         return None
     
     def _find_matching_recording(self, debug:bool = False):
@@ -430,7 +458,8 @@ class ConcertTagger:
         - `retain_existing_artwork`: If True, renames old folder images instead of deleting them (folder.<ext>.old).
         - `artwork_folders`: Directories to search for matching artwork,
           organized by artist abbreviation.
-        - `defaultimage_path`: Fallback image if no match is found.
+        - `default_images`: Mapping of artist abbreviations to fallback artwork
+          images.
 
         Args:
             num_threads (int, optional): Number of threads to use. Defaults to os.cpu_count()-1.
