@@ -75,8 +75,13 @@ def extract_year(date_str):
         valid_date = datetime.strptime(date_str, "%Y-%m-%d")
         return valid_date.year
     except ValueError:
-        # If it fails, fall back to extracting a two-digit year.
+        # If it fails, continue with more flexible parsing.
         pass
+
+    # Look for any four digit year in the string.
+    match = re.search(r"(\d{4})", date_str)
+    if match:
+        return int(match.group(1))
 
     # Look for a two-digit year pattern at the end of the string.
     match = re.search(r'(\d{2})$', date_str)
