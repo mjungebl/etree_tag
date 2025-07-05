@@ -107,7 +107,7 @@ def clean_track_name(title):
     """
 
     original = title
-    strip_after_n_spaces(title,5)
+    title = strip_after_n_spaces(title,5)
     #get rid of oddball whitespace
     re.sub(r'[\t\n\r\f\v]+', ' ', title)
     #trim all spaces down to 1

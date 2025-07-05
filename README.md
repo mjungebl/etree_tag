@@ -56,7 +56,8 @@ NOTE: I'd create a new folder and copy one or two shows into that folder and see
 
 There is a script called "InfoFileTagger.py" that can be used to tag the songs. It requires a text file in the directory to contain the shnid and have numbered tracks d1t01 if disc numbers are preferred or 01. song name, 01 song name, or a couple of other formats. I'll be incorporating that functionality directly in a later version. 
 
-NOTE: the call create the SQLiteEtreeDB passes a database in (sqlite). initially that database won't exist. when it initializes it will be populated from the csvs contained in the folder "db/csv/". If you move those files and have not initialized the database, you'll need to change the relative path to the csv files in sqliteetreedb.py. I'll be adding that to the config at some point, but for now, I'd leave them alone. That was a last minute change because the db is too large for github.  Also, as I have not added my scraping code to this project, this allows "manual" way to add more info to the db, for anyone inclined to do this that is not comfortable working with databases. 
+NOTE: the call create the SQLiteEtreeDB passes a database in (sqlite). initially that database won't exist. when it initializes it will be populated from the csvs contained in the folder "db/csv/". If you move those files and have not initialized the database, you'll need to change the relative path to the csv files in sqliteetreedb.py. I'll be adding that to the config at some point, but for now, I'd leave them alone. That was a last minute change because the db is too large for github.  Also, as I have not added my scraping code to this project, this allows "manual" way to add more info to the db, for anyone inclined to do this that is not comfortable working with databases.
+The artists table now includes an `ArtistAbbrev` column. These abbreviations are used when locating artwork files (e.g. `gd` for Grateful Dead).
 The call I'm referring to is this one:
 etreedb = SQLiteEtreeDB(db_path="db/etree_tag_dbv2.db")
 
@@ -78,6 +79,7 @@ soundboard_abbrev = "SBD"
 aud_abbrev = "AUD"
 matrix_abbrev = "MTX"
 ultramatrix_abbrev = "Ultramatrix"
+verbose_logging = false
 [album_tag]
 include_bitrate = true
 include_bitrate_not16_only = true

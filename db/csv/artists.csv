@@ -1,8 +1,8 @@
-artistid,ArtistName
-2,Grateful Dead
-4,Phish
-12,Garcia
-847,Grateful Dead Compilations
-8515,Pigpen
-28494,Grateful Dead Interviews
-40644,Furthur
+artistid,ArtistName,ArtistAbbrev
+2,Grateful Dead,gd
+4,Phish,ph
+12,Garcia,jg
+847,Grateful Dead Compilations,gd
+8515,Pigpen,pigpen
+28494,Grateful Dead Interviews,gd
+40644,Furthur,furthur

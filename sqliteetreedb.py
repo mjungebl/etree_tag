@@ -98,21 +98,31 @@ class SQLiteEtreeDB:
             self.cursor.execute("""
                 CREATE TABLE IF NOT EXISTS artists (
                     artistid INTEGER PRIMARY KEY,
-                    ArtistName TEXT UNIQUE ON CONFLICT IGNORE
+                    ArtistName TEXT UNIQUE ON CONFLICT IGNORE,
+                    ArtistAbbrev TEXT
                 )
             """)
 
+            # Ensure the ArtistAbbrev column exists for older databases
+            self.cursor.execute("PRAGMA table_info(artists)")
+            artist_columns = {row[1] for row in self.cursor.fetchall()}
+            if "ArtistAbbrev" not in artist_columns:
+                self.cursor.execute("ALTER TABLE artists ADD COLUMN ArtistAbbrev TEXT")
+
             # Insert predefined artists, no need for a csv yet
             artists_data = [
-                (2, 'Grateful Dead'),
-                (4, 'Phish'),
-                (12, 'Garcia'),
-                (847,'Grateful Dead Compilations'),
-                (28494,'Grateful Dead Interviews'),
-                (8515,'Pigpen'),
-                (40644,'Furthur')
+                (2, 'Grateful Dead', 'gd'),
+                (4, 'Phish', 'ph'),
+                (12, 'Garcia', 'jg'),
+                (847, 'Grateful Dead Compilations', 'gd'),
+                (28494, 'Grateful Dead Interviews', 'gd'),
+                (8515, 'Pigpen', 'pigpen'),
+                (40644, 'Furthur', 'furthur')
             ]
-            self.cursor.executemany("INSERT OR REPLACE INTO artists (artistid, ArtistName) VALUES (?, ?);", artists_data)
+            self.cursor.executemany(
+                "INSERT OR REPLACE INTO artists (artistid, ArtistName, ArtistAbbrev) VALUES (?, ?, ?);",
+                artists_data,
+            )
 
 
             self.cursor.execute("""
@@ -422,6 +432,19 @@ class SQLiteEtreeDB:
         except sqlite3.Error as e:
             logging.error(f"SQLite error in get_artists_dict: {e}")
             return {}
+
+    def get_artist_abbrev(self, artist_id):
+        """Return the abbreviation for the given artist_id."""
+        try:
+            self.cursor.execute(
+                "SELECT ArtistAbbrev FROM artists WHERE artistid = ?;",
+                (artist_id,),
+            )
+            result = self.cursor.fetchone()
+            return result[0] if result else None
+        except sqlite3.Error as e:
+            logging.error(f"SQLite error in get_artist_abbrev: {e}")
+            return None
 
 
     def clean_title_field(self,title):
@@ -829,7 +852,7 @@ class SQLiteEtreeDB:
 
 
 
-    def dump_sqlite_to_csv(self, folder='db/extract'):
+    def dump_sqlite_to_csv(self, folder='db/extract', db_path=None):
         """
         Dumps all tables from the given SQLite database to CSV files.
         Each CSV file is named after its table (e.g., 'table_name.csv') and
@@ -837,13 +860,17 @@ class SQLiteEtreeDB:
         saved into a specified folder (absolute or relative path).
 
         Args:
-            db_path (str): Path to the SQLite database file.
             folder (str, optional): Directory where CSV files will be saved.
                                     If provided, the folder will be created if it doesn't exist.
+            db_path (str, optional): Path to the SQLite database file.
+                                     Defaults to the path used by this instance.
         """
         # If a folder is provided, ensure it exists
         if folder:
             os.makedirs(folder, exist_ok=True)
+
+        if db_path is None:
+            db_path = self.db_path
 
         # Connect to the SQLite database
         conn = sqlite3.connect(db_path)
@@ -904,19 +931,17 @@ class EtreeRecording:
         self.md5key = md5key
         details = etreedb.get_shnid_details(self.id)
         self.date = None
+        self.artist_abbrev = None
         if details is None:
             self.date = None  # or set a default value / log a warning
             logging.error(f"No event details found for match: {self.id}")
             raise ValueError(f"No event details found for match: {self.id}")
         else:
-            self.date = details[0]        
-        # if details:
-        #     self.date = details[0]
-        # else:
-        #     self.date = None
+            self.date = details[0]
             self.etreevenue = details[1]
             self.source = details[2]
             self.artist = etreedb.get_artist_name(details[3])
+            self.artist_abbrev = etreedb.get_artist_abbrev(details[3])
             self.venue = details[4]
             self.city = details[5]
         self._checksums = None
@@ -960,13 +985,16 @@ class EtreeRecording:
 
     def build_info_file(self):
         #TODO: add gazinta substitution here, use config file for title format
-        print (f"Artist: {self.artist}")
-        print (f'Album: {self.date} {self.etreevenue} {'['+self.tracks[0].bitabbrev+']' if self.tracks[0].bitabbrev else ''} {'('+str(self.id)+')'}')
-            
-        print (f'Comment: {self.source}')
+        print(f"Artist: {self.artist}")
+        bit = f"[{self.tracks[0].bitabbrev}]" if self.tracks and self.tracks[0].bitabbrev else ""
+        print(f"Album: {self.date} {self.etreevenue} {bit} ({self.id})")
+
+        print(f"Comment: {self.source}")
         for track in self.tracks:
-            print(f"{'d'+track.disc.split('/')[0] if track.disc else ''}{'t'+track.tracknum.split('/')[0] +
-                                                                         '. ' if track.tracknum else ''}{track.title_clean}{' ->' if track.gazinta == 'T' else ''} [{track.length}]")
+            disc_str = f"d{track.disc.split('/')[0]}" if track.disc else ""
+            track_str = f"t{track.tracknum.split('/')[0]}. " if track.tracknum else ""
+            arrow = " ->" if track.gazinta == 'T' else ""
+            print(f"{disc_str}{track_str}{track.title_clean}{arrow} [{track.length}]")
 
 class Track:
     def __init__(self,shnid, disc_number, track_number, title, fingerprint, bit_depth, frequency, length, channels, filename, md5key,title_clean,gazinta):
