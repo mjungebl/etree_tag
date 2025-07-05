@@ -21,9 +21,15 @@ class RecordingFolder:
             raise ValueError(f"{concert_folder} is not a valid directory.")
         self.foldershnid = self._parse_shnid(self.folder.name)
         self.musicfiles =  [MusicFile(str(x)) for x in self.folder.glob("*.flac")]
-        self.text_files = self.folder.glob("*.txt")
-        self.fingerprint_files = self.folder.glob("*.ffp")
-        self.st5_files = self.folder.glob("*.st5")
+
+        # identify optional companion files
+        self.info_file = (
+            self._find_file_by_keyword("txt", "info")
+            or self._find_file_by_extension("txt")
+        )
+        self.fingerprint_file = self._find_file_by_extension("ffp")
+        self.st5_file = self._find_file_by_extension("st5")
+        self.artwork_file = self._find_artwork()
         self.checksums = self._get_checksums(self.musicfiles)
         self.recordingtype = self._classify_folder(self.folder.name)
 
