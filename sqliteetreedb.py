@@ -829,7 +829,7 @@ class SQLiteEtreeDB:
 
 
 
-    def dump_sqlite_to_csv(self, folder='db/extract'):
+    def dump_sqlite_to_csv(self, folder='db/extract', db_path=None):
         """
         Dumps all tables from the given SQLite database to CSV files.
         Each CSV file is named after its table (e.g., 'table_name.csv') and
@@ -837,13 +837,17 @@ class SQLiteEtreeDB:
         saved into a specified folder (absolute or relative path).
 
         Args:
-            db_path (str): Path to the SQLite database file.
             folder (str, optional): Directory where CSV files will be saved.
                                     If provided, the folder will be created if it doesn't exist.
+            db_path (str, optional): Path to the SQLite database file.
+                                     Defaults to the path used by this instance.
         """
         # If a folder is provided, ensure it exists
         if folder:
             os.makedirs(folder, exist_ok=True)
+
+        if db_path is None:
+            db_path = self.db_path
 
         # Connect to the SQLite database
         conn = sqlite3.connect(db_path)
@@ -960,13 +964,16 @@ class EtreeRecording:
 
     def build_info_file(self):
         #TODO: add gazinta substitution here, use config file for title format
-        print (f"Artist: {self.artist}")
-        print (f'Album: {self.date} {self.etreevenue} {'['+self.tracks[0].bitabbrev+']' if self.tracks[0].bitabbrev else ''} {'('+str(self.id)+')'}')
-            
-        print (f'Comment: {self.source}')
+        print(f"Artist: {self.artist}")
+        bit = f"[{self.tracks[0].bitabbrev}]" if self.tracks and self.tracks[0].bitabbrev else ""
+        print(f"Album: {self.date} {self.etreevenue} {bit} ({self.id})")
+
+        print(f"Comment: {self.source}")
         for track in self.tracks:
-            print(f"{'d'+track.disc.split('/')[0] if track.disc else ''}{'t'+track.tracknum.split('/')[0] +
-                                                                         '. ' if track.tracknum else ''}{track.title_clean}{' ->' if track.gazinta == 'T' else ''} [{track.length}]")
+            disc_str = f"d{track.disc.split('/')[0]}" if track.disc else ""
+            track_str = f"t{track.tracknum.split('/')[0]}. " if track.tracknum else ""
+            arrow = " ->" if track.gazinta == 'T' else ""
+            print(f"{disc_str}{track_str}{track.title_clean}{arrow} [{track.length}]")
 
 class Track:
     def __init__(self,shnid, disc_number, track_number, title, fingerprint, bit_depth, frequency, length, channels, filename, md5key,title_clean,gazinta):
