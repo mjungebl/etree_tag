@@ -482,9 +482,19 @@ class ConcertTagger:
         ####DEPRECATED####
         #TODO customise this string (separate function?)
         #print(f'{self.etreerec.date=}')
-        album = f'{self.etreerec.date} {self.etreerec.etreevenue} {'('+self.folder.recordingtype+') ' if self.folder.recordingtype else ''}{'['+str(self.folder.musicfiles[0].audio.info.bits_per_sample)+'-'+
-                                                                   str(self.folder.musicfiles[0].audio.info.sample_rate).rstrip('0')+
-                                                                   '] ' if self.folder.musicfiles and str(self.folder.musicfiles[0].audio.info.bits_per_sample) != '16' else ''}{'('+str(self.etreerec.id)+')'}'
+        album = f"{self.etreerec.date} {self.etreerec.etreevenue} "
+        if self.folder.recordingtype:
+            album += f"({self.folder.recordingtype}) "
+        if (
+            self.folder.musicfiles
+            and str(self.folder.musicfiles[0].audio.info.bits_per_sample) != "16"
+        ):
+            bitrate = (
+                f"{self.folder.musicfiles[0].audio.info.bits_per_sample}-"
+                f"{str(self.folder.musicfiles[0].audio.info.sample_rate).rstrip('0')}"
+            )
+            album += f"[{bitrate}] "
+        album += f"({self.etreerec.id})"
         print(f'{album=}')
         if not self.etreerec.tracks:
             print(f'ERROR: Unable to tag track names. No Metadata found in {self.db.db_path} for {self.folderpath.as_posix()}')
@@ -712,7 +722,10 @@ class ConcertTagger:
             #print(file.name, self.etreerec.id, [track.title for track in self.etreerec.tracks if track.fingerprint == file.checksum][0])
             tracknum, disc, title = None, None, None
             if song_info:
-                tracknum, disc, title = song_info.tracknum, song_info.disc,f'{song_info.title}{' ' + gazinta_abbrev if song_info.gazinta else ''}'
+                title = song_info.title
+                if song_info.gazinta:
+                    title = f"{title} {gazinta_abbrev}"
+                tracknum, disc = song_info.tracknum, song_info.disc
             args_list.append((file.path, file.name, artwork_path_str, clear_existing_artwork, clear_existing_tags,
              album, genretag, self.etreerec.artist, self.etreerec.source,tracknum, disc, title))
             #print(song_info.title, song_info.gazinta)
