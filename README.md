@@ -78,6 +78,7 @@ soundboard_abbrev = "SBD"
 aud_abbrev = "AUD"
 matrix_abbrev = "MTX"
 ultramatrix_abbrev = "Ultramatrix"
+verbose_logging = false
 [album_tag]
 include_bitrate = true
 include_bitrate_not16_only = true
