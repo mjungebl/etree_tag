@@ -57,7 +57,10 @@ NOTE: I'd create a new folder and copy one or two shows into that folder and see
 There is a script called "InfoFileTagger.py" that can be used to tag the songs. It requires a text file in the directory to contain the shnid and have numbered tracks d1t01 if disc numbers are preferred or 01. song name, 01 song name, or a couple of other formats. I'll be incorporating that functionality directly in a later version. 
 
 NOTE: the call create the SQLiteEtreeDB passes a database in (sqlite). initially that database won't exist. when it initializes it will be populated from the csvs contained in the folder "db/csv/". If you move those files and have not initialized the database, you'll need to change the relative path to the csv files in sqliteetreedb.py. I'll be adding that to the config at some point, but for now, I'd leave them alone. That was a last minute change because the db is too large for github.  Also, as I have not added my scraping code to this project, this allows "manual" way to add more info to the db, for anyone inclined to do this that is not comfortable working with databases.
-The artists table now includes an `ArtistAbbrev` column. These abbreviations are used when locating artwork files (e.g. `gd` for Grateful Dead).
+The artists table now includes an `ArtistAbbrev` column. These abbreviations are
+used when locating artwork files (e.g. `gd` for Grateful Dead). Configuration
+for artwork directories is keyed by these abbreviations. If an artist
+abbreviation is not listed, artwork tagging is skipped and a notice is logged.
 The call I'm referring to is this one:
 etreedb = SQLiteEtreeDB(db_path="db/etree_tag_dbv2.db")
 
@@ -93,7 +96,9 @@ suffix = ['','','','',')',']']
 [cover]
 clear_existing_artwork = false # Clears existing artwork tags and sets a new one
 retain_existing_artwork = true
-artwork_folders = ['GD_Art/EE_Artwork/', 'GD_Art/TV_Artwork/']
+
+[cover.artwork_folders]
+gd = ['GD_Art/EE_Artwork/', 'GD_Art/TV_Artwork/']
 
 defaultimage_path = 'GD_Art/default.jpg'
 ```

@@ -261,7 +261,9 @@ class ConcertTagger:
         Initialize the ConcertTagger with a concert folder and a configuration dictionary.
         
         The configuration should contain:
-            - artwork_folders: a list of directories (relative or absolute) to search for artwork.
+            - artwork_folders: a dictionary mapping artist abbreviations to
+              lists of directories (relative or absolute) to search for artwork.
+              If an abbreviation has no entry, artwork tagging is skipped.
             - defaultimage_path: the path to a default artwork image.
         
         Args:
@@ -283,18 +285,33 @@ class ConcertTagger:
             self.NoMatch = True
         if not self.etreerec:
             self.NoMatch = True
-        # Store configuration for artwork search.
-        self.artwork_folders = config["cover"]["artwork_folders"]
-        self.defaultimage_path = config["cover"]["defaultimage_path"]
+        # Store configuration for artwork search. ``artwork_folders`` maps
+        # artist abbreviations to lists of directories. If an abbreviation is
+        # not present, no artwork search will be performed for that artist.
+        self.artwork_folders_map = config["cover"].get("artwork_folders", {})
+        self.defaultimage_path = config["cover"].get("defaultimage_path")
+        self.artwork_folders = []
         self.artworkpath = None
         self.errormsg = None
 
         if not self.NoMatch:
             try:
                 if self.etreerec.date and self.etreerec.artist_abbrev:
-                    self.artworkpath = self._find_artwork(
-                        self.etreerec.artist_abbrev, self.etreerec.date
+                    # Select artwork folders for this artist. No fallback is
+                    # used—if the abbreviation is not configured, we skip artwork
+                    # tagging for this concert.
+                    self.artwork_folders = self.artwork_folders_map.get(
+                        self.etreerec.artist_abbrev, []
                     )
+                    if not self.artwork_folders:
+                        logging.info(
+                            f"No artwork directories configured for artist "
+                            f"{self.etreerec.artist_abbrev}"
+                        )
+                    else:
+                        self.artworkpath = self._find_artwork(
+                            self.etreerec.artist_abbrev, self.etreerec.date
+                        )
             except Exception as e:
                 logging.error(
                     f'Exception: {e} in _find_artwork for {self.folderpath.as_posix()}'
@@ -406,7 +423,8 @@ class ConcertTagger:
         See `config.toml` for artwork preferences:
         - `clear_existing_artwork`: If True, removes existing artwork tag and folder image before adding a new one.
         - `retain_existing_artwork`: If True, renames old folder images instead of deleting them (folder.<ext>.old).
-        - `artwork_folders`: Directories to search for matching artwork.
+        - `artwork_folders`: Directories to search for matching artwork,
+          organized by artist abbreviation.
         - `defaultimage_path`: Fallback image if no match is found.
 
         Args:

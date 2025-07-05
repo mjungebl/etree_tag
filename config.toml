@@ -28,17 +28,23 @@ order = ["show_date","city","venue", "recording_type", "shnid","bitrate"]
 #NOTE: These lists must be the same length as the order list above, otherwise these lists will be ignored completely
 prefix = ['',' ',' ',' ',' (',' [']
 suffix = ['','','','',')',']']
-#specify the directories to search for artwork in the order in which they should be searched order to search.
-# Underneath these folders the files are separated into subdirectories by year. the search will append the year to the directory and if a directory
-#   exists for the given year, that directory will be searched in each folder. 
-#   the search will look for *.jpg files that start with the artist abbreviation followed by the exact date of the concert in YYYY-MM-DD format,
-#   for example: "GD_Art/TV_Artwork/1975/gd1975-03-23-Kezar-Stadium.jpg" would be returned when searching for the concert that took place on Mar 23, 1975,
-#   unless there was a file matching that date in "GD_Art/EE_Artwork/", of course
+# Specify the directories to search for artwork. Directories are grouped by
+# artist abbreviation. Under each folder, files are organized in subdirectories
+# by year. A search will append the year to the folder and look for files named
+# "<artist_abbrev><concert_date>*.jpg". For example:
+#   "GD_Art/TV_Artwork/1975/gd1975-03-23-Kezar-Stadium.jpg"
+# would match the Grateful Dead show on 1975-03-23 unless a file exists in
+# "GD_Art/EE_Artwork/" for the same date.
 
 [cover]
 clear_existing_artwork = false # Clears existing artwork tags and sets a new one
 retain_existing_artwork = true # If an existing folder.{ext} file exists, append its name w/".old", even if the tag is overwritten
-artwork_folders = ['GD_Art/EE_Artwork/', 'GD_Art/TV_Artwork/']
+
+[cover.artwork_folders]
+gd = ['GD_Art/EE_Artwork/', 'GD_Art/TV_Artwork/']
+# Add additional entries keyed by artist abbreviation.
+# If an abbreviation is missing, tagging will continue without artwork.
+
 #this image will be used if no image is found for the given date in the paths above
 defaultimage_path = 'GD_Art/default.jpg'
 
