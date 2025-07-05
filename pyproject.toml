@@ -8,3 +8,7 @@ dependencies = [
     "mutagen>=1.47.0",
     "tqdm>=4.67.1",
 ]
+[project.optional-dependencies]
+test = [
+    "pytest",
+]

@@ -961,12 +961,20 @@ class EtreeRecording:
     def build_info_file(self):
         #TODO: add gazinta substitution here, use config file for title format
         print (f"Artist: {self.artist}")
-        print (f'Album: {self.date} {self.etreevenue} {'['+self.tracks[0].bitabbrev+']' if self.tracks[0].bitabbrev else ''} {'('+str(self.id)+')'}')
+        print(
+            f"Album: {self.date} {self.etreevenue} "
+            f"{ '[' + self.tracks[0].bitabbrev + ']' if self.tracks[0].bitabbrev else '' } "
+            f"({self.id})"
+        )
             
         print (f'Comment: {self.source}')
         for track in self.tracks:
-            print(f"{'d'+track.disc.split('/')[0] if track.disc else ''}{'t'+track.tracknum.split('/')[0] +
-                                                                         '. ' if track.tracknum else ''}{track.title_clean}{' ->' if track.gazinta == 'T' else ''} [{track.length}]")
+            print(
+                f"{'d'+track.disc.split('/')[0] if track.disc else ''}"
+                f"{'t'+track.tracknum.split('/')[0] + '. ' if track.tracknum else ''}"
+                f"{track.title_clean}"
+                f"{' ->' if track.gazinta == 'T' else ''} [{track.length}]"
+            )
 
 class Track:
     def __init__(self,shnid, disc_number, track_number, title, fingerprint, bit_depth, frequency, length, channels, filename, md5key,title_clean,gazinta):
