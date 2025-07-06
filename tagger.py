@@ -363,6 +363,7 @@ class ConcertTagger:
 
         folder_name = self.folderpath.name
         abbr = self.etreerec.artist_abbrev
+
         shnid = getattr(self.etreerec, "id", None)
         db_date = getattr(self.etreerec, "date", None)
 
@@ -440,6 +441,7 @@ class ConcertTagger:
 
             self.folderpath = new_path
             self.folder = RecordingFolder(str(new_path), self.db)
+
     
     def _find_artwork(self, artist_abbr: str, concert_date: str):
         """
