@@ -1,6 +1,7 @@
 from pathlib import Path
 from mutagen.flac import FLAC, Picture
 import logging
+from sqliteetreedb import SQLiteEtreeDB, EtreeRecording
 
 class RecordingFolder:
     def __init__(self, concert_folder: str):
@@ -164,6 +165,60 @@ class RecordingFolder:
         if self.st5_file and self.st5_file.exists():
             return self.st5_file.read_text(encoding="utf-8")
         return ""
+
+    def _find_matching_recording(self, db: SQLiteEtreeDB, debug: bool = False):
+        """Return an ``EtreeRecording`` matching this folder's checksums, if any."""
+        if not self.checksums:
+            return None
+
+        matches, mismatch = db.get_local_checksum_matches(self.checksums)
+        if debug:
+            print(f'{self.checksums=}')
+            print(f'{matches=}')
+            print(f'{mismatch=}')
+
+        checksum_pairs = set()
+        if not mismatch:
+            for shnid, md5key in matches:
+                if debug:
+                    print(f'{shnid=}', f'{md5key=}')
+                try:
+                    rec = EtreeRecording(db, shnid, md5key)
+                except Exception as e:
+                    msg = f'Error encountered for {self.folder}: {e}'
+                    if debug:
+                        print(msg)
+                    raise Exception(msg)
+                if debug:
+                    print(f'{rec.id=}', f'{rec.md5key=}', f'{rec.checksums=}')
+                for sig in rec.checksums:
+                    if set(sig.checksumlist) == set(self.checksums):
+                        print(
+                            f"Match found: {sig.filename} md5key={sig.id} shnid={sig.shnid}"
+                        )
+                        if rec.tracks:
+                            return rec
+                        checksum_pairs.add((sig.shnid, sig.id))
+                        break
+
+        result = None
+        for shnid, md5key in checksum_pairs:
+            result = EtreeRecording(db, shnid, md5key)
+            if self.foldershnid == result.id:
+                print(
+                    f'Exact match found for shnid {result.id} in folder name'
+                )
+                logging.info(
+                    f'Exact match found for shnid {result.id} in folder name'
+                )
+                return result
+            print(
+                f'No EXACT MATCH found for shnid {self.foldershnid} using {result.id}'
+            )
+            logging.warn(
+                f'No EXACT MATCH found for shnid {self.foldershnid} using {result.id}'
+            )
+        return result
 
     
     

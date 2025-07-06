@@ -24,8 +24,6 @@ Functions:
     _tag_artwork_for_file_thread(args):
     ConcertTagger.__init__(self, concert_folder: str, config: dict, db: SQLiteEtreeDB):
     ConcertTagger._find_artwork(self, artist_abbr: str, concert_date: str):
-    ConcertTagger._find_matching_recording(self):
-        Find a matching recording in the database based on checksums.
     ConcertTagger.tag_artwork(self, clear_existing: bool = False, num_threads: int = None):
     ConcertTagger.tag_album(self, clear_existing: bool = True):
         Tag FLAC files with album information.
@@ -285,10 +283,9 @@ class ConcertTagger:
         self.db = db
         self.NoMatch = False
         try:
-            self.etreerec = self._find_matching_recording(debug)
+            self.etreerec = self.folder._find_matching_recording(self.db, debug)
         except Exception as e:
-            #raise(f'Error in ConcertTagger Init {e}')
-            print (f'Error in ConcertTagger Init _find_matching_recording {e}')
+            print(f'Error in ConcertTagger Init _find_matching_recording {e}')
             self.NoMatch = True
         if not self.etreerec:
             self.NoMatch = True
@@ -403,51 +400,6 @@ class ConcertTagger:
         # decide whether to skip tagging or raise an error.
         return None
     
-    def _find_matching_recording(self, debug:bool = False):
-        #TODO:Move this function to etreedb?
-        if self.folder.checksums:
-            matches,b_mismatch_exists = self.db.get_local_checksum_matches(self.folder.checksums)
-            if debug:
-                print(f'{self.folder.checksums=}')
-                print(f'{matches=}')
-                print(f'{b_mismatch_exists=}')
-            checksummatches = set()
-            if not b_mismatch_exists: #return an empty list if one of the files does not have any matches
-            #TODO: add explanation of mismatch, maybe another function call?
-                for match in matches:
-                    if debug:
-                        print(f'{match[0]=} {match[1]=}')
-                    try:
-                        rec = EtreeRecording(self.db,match[0],match[1])
-                    except Exception as e:
-                        error = f'Error encountered for {self.folderpath}: {e}'
-                        if debug:
-                            print (error)
-                        raise Exception (f'Error encountered for {self.folderpath}: {e}')
-                        #continue
-                    if debug:
-                        print(f'{rec.id=} {rec.md5key=} {rec.checksums=}')
-                    for sig in rec.checksums:
-                        if set(sig.checksumlist) == set(self.folder.checksums):
-                            print (f"Match found: {sig.filename} md5key={sig.id} shnid={sig.shnid}")
-                            if rec.tracks: #take the first match that is identical and has the tracks listed because everything can presumably be tagged
-                                return rec
-                            checksummatches.add((sig.shnid,sig.id))
-                            break #only need 1 match per shnid
-            #print(list(checksummatches)) #change to return if using 2 functions?
-            #TODO, make this a second function?
-            etreerec = None
-            for shnid, md5key in checksummatches:
-                etreerec = EtreeRecording(self.db,shnid,md5key)
-                if self.folder.foldershnid == etreerec.id:
-                    print(f'Exact match found for shnid {etreerec.id} in folder name') #might as well use the folder
-                    logging.info(f'Exact match found for shnid {etreerec.id} in folder name')
-                    return etreerec
-                print(f'No EXACT MATCH found for shnid {self.folder.foldershnid} using {etreerec.id}')
-                logging.warn(f'No EXACT MATCH found for shnid {self.folder.foldershnid} using {etreerec.id}')
-            return etreerec
-        else:
-            return None
 
     def tag_artwork(self, num_threads: int = None):
         """ 
