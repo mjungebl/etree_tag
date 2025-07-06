@@ -287,8 +287,16 @@ class ConcertTagger:
         except Exception as e:
             print(f'Error in ConcertTagger Init _find_matching_recording {e}')
             self.NoMatch = True
+
         if not self.etreerec:
             self.NoMatch = True
+        else:
+            # standardize folder name if artist abbreviation and year are not
+            # in the expected format
+            try:
+                self._standardize_folder_year()
+            except Exception as e:
+                logging.error(f"_standardize_folder_year failed: {e}")
         # Store configuration for artwork search. ``artwork_folders`` maps
         # artist abbreviations to lists of directories. If an abbreviation is
         # not present, no artwork search will be performed for that artist.
@@ -347,6 +355,42 @@ class ConcertTagger:
             logging.error(f'No Matching recording found in database for folder {self.folderpath.as_posix()}')
             self.errormsg = f'No Matching recording found in database for folder {self.folderpath.as_posix()}'
         # ... (other initializations such as finding FLAC files and auxiliary files)
+
+    def _standardize_folder_year(self):
+        """Ensure folder name starts with artist abbreviation and 4-digit year."""
+        if not self.etreerec or not self.etreerec.artist_abbrev:
+            return
+
+        folder_name = self.folderpath.name
+        abbr = self.etreerec.artist_abbrev
+        if not folder_name.lower().startswith(abbr.lower()):
+            return
+
+        remainder = folder_name[len(abbr):]
+        first_part, *rest = remainder.split('.', 1)
+        rest_str = f".{rest[0]}" if rest else ""
+
+        if re.match(r"\d{4}", first_part):
+            return
+
+        m = re.match(r"(\d{2})", first_part)
+        if not m:
+            return
+
+        year_full = datetime.strptime(m.group(1), "%y").strftime("%Y")
+        new_first = year_full + first_part[len(m.group(1)) :]
+        new_name = f"{abbr}{new_first}{rest_str}"
+
+        new_path = self.folderpath.with_name(new_name)
+        try:
+            self.folderpath.rename(new_path)
+        except FileExistsError:
+            logging.error(f"Cannot rename {self.folderpath} to {new_path}: target exists")
+            return
+
+        self.folderpath = new_path
+        # re-initialize folder to use the new path
+        self.folder = RecordingFolder(str(new_path), self.db)
     
     def _find_artwork(self, artist_abbr: str, concert_date: str):
         """
