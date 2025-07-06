@@ -107,6 +107,14 @@ if __name__ == "__main__":
         outcomes = validate_parent_folder(args.parent, args.db)
     else:
         outcomes = validate_folders(args.folders, args.db)
+    mismatches = []
     for folder, matched in outcomes:
         status = "matched" if matched else "no match"
-        print(f"{folder}: {status}")
+        if status == "matched":
+            print(f"{folder}: {status}")
+        else:
+            mismatches.append(folder)
+    if mismatches:
+        print(f"The following {len(mismatches)} items did not match an existing shnid:")
+        for folder in mismatches:
+            print(folder)
