@@ -4,19 +4,23 @@ import logging
 from sqliteetreedb import SQLiteEtreeDB, EtreeRecording
 
 class RecordingFolder:
-    def __init__(self, concert_folder: str):
+    def __init__(self, concert_folder: str, etree_db: SQLiteEtreeDB | None = None):
         """
         Initialize the Concert for a given concert folder.
 
         Args:
             concert_folder (str): Path to the folder containing concert files.
-                This folder should include one or more .flac files and may also contain:
+            This folder should include one or more .flac files and may also contain:
                   - an info file (a .txt file with "info" in the name),
                   - a fingerprint file (with .ffp extension),
                   - a checksum file (with .st5 extension),
                   - and artwork (e.g. folder.jpg, cover.jpg, or front.jpg).
+            etree_db (SQLiteEtreeDB | None): Optional database instance used for
+                matching recordings. If not provided, ``_find_matching_recording``
+                must be passed a database when called.
         """
         self.folder = Path(concert_folder)
+        self.etree_db = etree_db
         if not self.folder.is_dir():
             logging.error(f"{concert_folder} is not a valid directory.")
             raise ValueError(f"{concert_folder} is not a valid directory.")
@@ -166,8 +170,15 @@ class RecordingFolder:
             return self.st5_file.read_text(encoding="utf-8")
         return ""
 
-    def _find_matching_recording(self, db: SQLiteEtreeDB, debug: bool = False):
+    def _find_matching_recording(
+        self, db: SQLiteEtreeDB | None = None, debug: bool = False
+    ):
         """Return an ``EtreeRecording`` matching this folder's checksums, if any."""
+        if db is None:
+            db = self.etree_db
+        if db is None:
+            raise ValueError("SQLiteEtreeDB instance required")
+
         if not self.checksums:
             return None
 
@@ -245,7 +256,8 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
     #TODO: below is unimplemented for load to db so far, but will be used to pull entries into the database from files. Current code needs a cleanup and will be merged into this module
     concert_folder = r"X:\Downloads\_FTP\gdead.1982.project_missing\gd1982-09-12.7826.sbd.ladner.sbeok.flac16"
-    tagger = RecordingFolder(concert_folder)
+    etree_db = SQLiteEtreeDB()
+    tagger = RecordingFolder(concert_folder, etree_db)
     rows = tagger.build_track_inserts()
     for row in rows:
         print(row)
