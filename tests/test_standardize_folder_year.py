@@ -60,7 +60,8 @@ def test_standardize_folder_year_two_digit(tmp_path: Path):
     folder = tmp_path / "gd75-07-05.test"
     folder.mkdir()
     tagger = _make_tagger(folder)
-    tagger._standardize_folder_year()
+    tagger.folder._standardize_folder_year(tagger.etreerec)
+    tagger.folderpath = tagger.folder.folder
     assert tagger.folderpath.name.startswith("gd1975-")
 
 
@@ -68,7 +69,8 @@ def test_standardize_folder_year_already_four(tmp_path: Path):
     folder = tmp_path / "gd1975-07-05.test"
     folder.mkdir()
     tagger = _make_tagger(folder)
-    tagger._standardize_folder_year()
+    tagger.folder._standardize_folder_year(tagger.etreerec)
+    tagger.folderpath = tagger.folder.folder
     assert tagger.folderpath.name == "gd1975-07-05.12345.test"
 
 
@@ -77,7 +79,8 @@ def test_standardize_folder_year_no_prefix(tmp_path: Path):
     folder = tmp_path / "ph75-07-05.test"
     folder.mkdir()
     tagger = _make_tagger(folder)
-    tagger._standardize_folder_year()
+    tagger.folder._standardize_folder_year(tagger.etreerec)
+    tagger.folderpath = tagger.folder.folder
     assert tagger.folderpath.name == folder.name
 
 
@@ -86,7 +89,8 @@ def test_date_correction_and_shnid_insert(tmp_path: Path):
     folder = tmp_path / "gd1975-07-04.sbd"
     folder.mkdir()
     tagger = _make_tagger(folder, date="1975-07-05", shnid=999)
-    tagger._standardize_folder_year()
+    tagger.folder._standardize_folder_year(tagger.etreerec)
+    tagger.folderpath = tagger.folder.folder
     assert tagger.folderpath.name == "gd1975-07-05.999.sbd"
 
 
@@ -94,7 +98,8 @@ def test_move_existing_shnid(tmp_path: Path):
     folder = tmp_path / "gd1975-07-05.sbd.777.flac16"
     folder.mkdir()
     tagger = _make_tagger(folder, shnid=777)
-    tagger._standardize_folder_year()
+    tagger.folder._standardize_folder_year(tagger.etreerec)
+    tagger.folderpath = tagger.folder.folder
     assert tagger.folderpath.name == "gd1975-07-05.777.sbd.flac16"
 
 

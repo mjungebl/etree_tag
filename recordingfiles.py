@@ -2,6 +2,8 @@ from pathlib import Path
 from mutagen.flac import FLAC, Picture
 import logging
 from sqliteetreedb import SQLiteEtreeDB, EtreeRecording
+import re
+from datetime import datetime
 
 class RecordingFolder:
     def __init__(self, concert_folder: str, etree_db: SQLiteEtreeDB | None = None):
@@ -231,8 +233,93 @@ class RecordingFolder:
             )
         return result
 
-    
-    
+    def _standardize_folder_year(self, etree_rec: EtreeRecording | None):
+        """Validate and normalize the folder name using database info."""
+        if not etree_rec or not etree_rec.artist_abbrev:
+            return
+
+        folder_name = self.folder.name
+        abbr = etree_rec.artist_abbrev
+
+        shnid = getattr(etree_rec, "id", None)
+        db_date = getattr(etree_rec, "date", None)
+
+        if not folder_name.lower().startswith(abbr.lower()):
+            msg = f"Folder name {folder_name} does not start with {abbr}"
+            print(msg)
+            logging.error(msg)
+            return
+
+        parts = folder_name.split(".")
+        first = parts[0]
+        others = parts[1:]
+
+        # Strip artist abbreviation
+        remainder = first[len(abbr) :]
+
+        # Handle year expansion
+        m = re.match(r"(?P<year>\d{4})(?P<rest>.*)$", remainder)
+        if m:
+            year = m.group("year")
+            after_year = m.group("rest")
+        else:
+            m2 = re.match(r"(?P<year>\d{2})(?P<rest>.*)$", remainder)
+            if not m2:
+                return
+            year = datetime.strptime(m2.group("year"), "%y").strftime("%Y")
+            after_year = m2.group("rest")
+
+        # Ensure -XX-XX after year
+        mdate = re.match(r"-(?P<month>..)-(?P<day>..)(?P<rest>.*)$", after_year)
+        if mdate:
+            month = mdate.group("month")
+            day = mdate.group("day")
+            after_date = mdate.group("rest")
+        else:
+            if db_date:
+                month = db_date[5:7]
+                day = db_date[8:10]
+            else:
+                month = "??"
+                day = "??"
+            after_date = after_year.lstrip("-")
+            after_date = f".{after_date}" if after_date and not after_date.startswith(".") else after_date
+
+        # Compare to DB date when numeric
+        candidate_date = f"{year}-{month}-{day}"
+        try:
+            folder_dt = datetime.strptime(candidate_date, "%Y-%m-%d")
+            db_dt = datetime.strptime(db_date, "%Y-%m-%d") if db_date else None
+            if db_dt and folder_dt.date().isoformat() != db_dt.date().isoformat():
+                month = db_date[5:7]
+                day = db_date[8:10]
+        except Exception:
+            pass
+
+        first = f"{abbr}{year}-{month}-{day}{after_date}"
+
+        # Ensure shnid position
+        if shnid is not None:
+            shnid_str = str(shnid)
+            others = [p for p in others if p != shnid_str]
+            others.insert(0, shnid_str)
+
+        new_name = ".".join([first] + others)
+        while ".." in new_name:
+            new_name = new_name.replace("..", ".")
+
+        if new_name != folder_name:
+            new_path = self.folder.with_name(new_name)
+            try:
+                self.folder.rename(new_path)
+            except FileExistsError:
+                logging.error(f"Cannot rename {self.folder} to {new_path}: target exists")
+                return
+
+            # Reinitialize to update all path-based attributes
+            self.__init__(str(new_path), self.etree_db)
+
+
 class MusicFile:
     def __init__(self,path):
         self.path = path
