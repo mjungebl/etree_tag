@@ -279,11 +279,11 @@ class ConcertTagger:
         self.folderpath = Path(concert_folder)
         if not self.folderpath.is_dir():
             raise ValueError(f"{concert_folder} is not a valid directory.")        
-        self.folder = RecordingFolder(concert_folder)
+        self.folder = RecordingFolder(concert_folder, db)
         self.db = db
         self.NoMatch = False
         try:
-            self.etreerec = self.folder._find_matching_recording(self.db, debug)
+            self.etreerec = self.folder._find_matching_recording(debug=debug)
         except Exception as e:
             print(f'Error in ConcertTagger Init _find_matching_recording {e}')
             self.NoMatch = True
