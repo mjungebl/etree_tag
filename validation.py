@@ -1,6 +1,7 @@
 from __future__ import annotations
 from pathlib import Path
 import logging
+from pathlib import Path
 from typing import Iterable, Tuple
 
 from recordingfiles import RecordingFolder
@@ -68,15 +69,39 @@ def validate_folders(folders: Iterable[str], db_path: str = "db/etree_scrape.db"
     return results
 
 
+def validate_parent_folder(parent: str, db_path: str = "db/etree_scrape.db") -> list[Tuple[str, bool]]:
+    """Validate all subfolders of a parent directory.
+
+    Parameters
+    ----------
+    parent: str
+        Path to a directory containing show folders.
+    db_path: str
+        Path to the SQLite database.
+
+    Returns
+    -------
+    list of tuple
+        Results from :func:`validate_folders` for each subfolder.
+    """
+    parent_path = Path(parent)
+    folders = sorted(str(f) for f in parent_path.iterdir() if f.is_dir())
+    return validate_folders(folders, db_path)
+
+
 if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="Validate recording folders against the database")
-    parser.add_argument("folders", nargs="+", help="Folder paths to validate")
+    parser.add_argument("folders", nargs="*", help="Folder paths to validate")
+    parser.add_argument("--parent", help="Parent directory containing show folders")
     parser.add_argument("--db", default="db/etree_scrape.db", help="Path to SQLite database")
     args = parser.parse_args()
 
-    outcomes = validate_folders(args.folders, args.db)
+    if args.parent:
+        outcomes = validate_parent_folder(args.parent, args.db)
+    else:
+        outcomes = validate_folders(args.folders, args.db)
     for folder, matched in outcomes:
         status = "matched" if matched else "no match"
         print(f"{folder}: {status}")
