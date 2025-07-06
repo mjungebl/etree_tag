@@ -14,11 +14,12 @@ mutagen.flac = flac_mod
 sys.modules.setdefault('mutagen', mutagen)
 sys.modules.setdefault('mutagen.flac', flac_mod)
 
-from validation import check_and_rename
+import validation
+from validation import check_and_rename, validate_parent_folder
 from recordingfiles import RecordingFolder
 
 class DummyDB:
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
         self.logged = []
     def insert_folder_shnid_log(self, shnid, folder_name):
         self.logged.append((shnid, folder_name))
@@ -54,3 +55,25 @@ def test_check_and_rename_with_match(tmp_path, monkeypatch):
     assert (tmp_path / "gd1975-07-05.123.sbd").exists()
     assert Path(new_folder).name == "gd1975-07-05.123.sbd"
     assert db.logged and db.logged[0][0] == 123
+
+
+def test_validate_parent_folder(tmp_path, monkeypatch):
+    parent = tmp_path / "shows"
+    sub1 = parent / "gd75-07-05.sbd"
+    sub2 = parent / "gd76-07-05.sbd"
+    sub1.mkdir(parents=True)
+    sub2.mkdir()
+
+    def fake_find(self, db=None, debug=False):
+        if self.folder == sub1:
+            return None
+        return types.SimpleNamespace(id=456, artist_abbrev="gd", date="1976-07-05")
+
+    monkeypatch.setattr(RecordingFolder, "_find_matching_recording", fake_find)
+    monkeypatch.setattr(validation, "SQLiteEtreeDB", DummyDB)
+
+    results = validate_parent_folder(str(parent))
+    assert results[0] == (str(sub1), False)
+    renamed = parent / "gd1976-07-05.456.sbd"
+    assert results[1] == (str(renamed), True)
+    assert renamed.exists()
