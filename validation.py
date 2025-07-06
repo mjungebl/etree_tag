@@ -38,6 +38,7 @@ def check_and_rename(folder: str, db: SQLiteEtreeDB) -> Tuple[str, bool]:
             logging.error(f"Failed to log folder {rec_folder.folder}: {e}")
         if rec_folder.folder != original:
             logging.info(f"Renamed {original} -> {rec_folder.folder}")
+        rec_folder.verify_fingerprint()
         return str(rec_folder.folder), True
     return folder, False
 
