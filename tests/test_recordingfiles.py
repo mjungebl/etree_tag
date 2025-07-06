@@ -63,6 +63,8 @@ def test_verify_fingerprint_existing(tmp_path, monkeypatch):
     class DummyFfp:
         def __init__(self, loc, name, signatures=None, metaflacpath=None, flacpath=None):
             calls.append(("init", loc, name, signatures))
+            self.result = ["ok"]
+            self.errors = ["err"]
         def readffpfile(self):
             calls.append("read")
         def verify(self):
@@ -70,8 +72,10 @@ def test_verify_fingerprint_existing(tmp_path, monkeypatch):
 
     monkeypatch.setattr(recordingfiles, "ffp", DummyFfp)
 
-    rec.verify_fingerprint()
+    result, errors = rec.verify_fingerprint()
     assert calls == [("init", str(tmp_path), "check.ffp", None), "read", "verify"]
+    assert result == ["ok"]
+    assert errors == ["err"]
 
 
 def test_verify_fingerprint_generate(tmp_path, monkeypatch):
@@ -84,6 +88,8 @@ def test_verify_fingerprint_generate(tmp_path, monkeypatch):
     class DummyFfp:
         def __init__(self, loc, name, signatures=None, metaflacpath=None, flacpath=None):
             self.signatures = signatures or {}
+            self.result = ["ok"]
+            self.errors = []
             calls.append(("init", loc, name, dict(self.signatures)))
         def SaveFfp(self):
             calls.append("save")
@@ -92,7 +98,9 @@ def test_verify_fingerprint_generate(tmp_path, monkeypatch):
 
     monkeypatch.setattr(recordingfiles, "ffp", DummyFfp)
 
-    rec.verify_fingerprint()
+    result, errors = rec.verify_fingerprint()
     expected_file = tmp_path / f"{tmp_path.name}.ffp"
     assert rec.fingerprint_file == expected_file
     assert ("save" in calls) and ("verify" in calls)
+    assert result == ["ok"]
+    assert errors == []
