@@ -36,9 +36,10 @@ def test_check_and_rename_no_match(tmp_path, monkeypatch):
     monkeypatch.setattr(RecordingFolder, "_find_matching_recording", fake_find)
 
     db = DummyDB()
-    new_folder, matched = check_and_rename(str(folder), db)
+    new_folder, matched, errors = check_and_rename(str(folder), db)
     assert not matched
     assert Path(new_folder) == folder
+    assert errors == []
 
 
 def test_check_and_rename_with_match(tmp_path, monkeypatch):
@@ -49,12 +50,17 @@ def test_check_and_rename_with_match(tmp_path, monkeypatch):
         return types.SimpleNamespace(id=123, artist_abbrev="gd", date="1975-07-05")
     monkeypatch.setattr(RecordingFolder, "_find_matching_recording", fake_find)
 
+    def fake_verify(self):
+        return [], []
+    monkeypatch.setattr(RecordingFolder, "verify_fingerprint", fake_verify)
+
     db = DummyDB()
-    new_folder, matched = check_and_rename(str(folder), db)
+    new_folder, matched, errors = check_and_rename(str(folder), db)
     assert matched
     assert (tmp_path / "gd1975-07-05.123.sbd").exists()
     assert Path(new_folder).name == "gd1975-07-05.123.sbd"
     assert db.logged and db.logged[0][0] == 123
+    assert errors == []
 
 
 def test_validate_parent_folder(tmp_path, monkeypatch):
@@ -70,10 +76,13 @@ def test_validate_parent_folder(tmp_path, monkeypatch):
         return types.SimpleNamespace(id=456, artist_abbrev="gd", date="1976-07-05")
 
     monkeypatch.setattr(RecordingFolder, "_find_matching_recording", fake_find)
+    def fake_verify(self):
+        return [], []
+    monkeypatch.setattr(RecordingFolder, "verify_fingerprint", fake_verify)
     monkeypatch.setattr(validation, "SQLiteEtreeDB", DummyDB)
 
     results = validate_parent_folder(str(parent))
-    assert results[0] == (str(sub1), False)
+    assert results[0] == (str(sub1), False, [])
     renamed = parent / "gd1976-07-05.456.sbd"
-    assert results[1] == (str(renamed), True)
+    assert results[1] == (str(renamed), True, [])
     assert renamed.exists()

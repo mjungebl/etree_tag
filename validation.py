@@ -11,7 +11,7 @@ from sqliteetreedb import SQLiteEtreeDB, EtreeRecording
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 
 
-def check_and_rename(folder: str, db: SQLiteEtreeDB) -> Tuple[str, bool]:
+def check_and_rename(folder: str, db: SQLiteEtreeDB) -> Tuple[str, bool, list[str]]:
     """Check a folder against the database and rename if a match is found.
 
     Parameters
@@ -24,8 +24,9 @@ def check_and_rename(folder: str, db: SQLiteEtreeDB) -> Tuple[str, bool]:
     Returns
     -------
     tuple
-        A tuple ``(new_folder, matched)`` where ``new_folder`` is the final folder
-        path and ``matched`` indicates whether a database match was found.
+        A tuple ``(new_folder, matched, errors)`` where ``new_folder`` is the
+        final folder path, ``matched`` indicates whether a database match was
+        found, and ``errors`` contains any fingerprint verification errors.
     """
     rec_folder = RecordingFolder(folder, db)
     match: EtreeRecording | None = rec_folder._find_matching_recording()
@@ -38,12 +39,12 @@ def check_and_rename(folder: str, db: SQLiteEtreeDB) -> Tuple[str, bool]:
             logging.error(f"Failed to log folder {rec_folder.folder}: {e}")
         if rec_folder.folder != original:
             logging.info(f"Renamed {original} -> {rec_folder.folder}")
-        rec_folder.verify_fingerprint()
-        return str(rec_folder.folder), True
-    return folder, False
+        _, errors = rec_folder.verify_fingerprint()
+        return str(rec_folder.folder), True, errors
+    return folder, False, []
 
 
-def validate_folders(folders: Iterable[str], db_path: str = "db/etree_scrape.db") -> list[Tuple[str, bool]]:
+def validate_folders(folders: Iterable[str], db_path: str = "db/etree_scrape.db") -> list[Tuple[str, bool, list[str]]]:
     """Validate and rename a sequence of folders.
 
     Parameters
@@ -56,7 +57,7 @@ def validate_folders(folders: Iterable[str], db_path: str = "db/etree_scrape.db"
     Returns
     -------
     list of tuple
-        A list of ``(folder, matched)`` tuples for each processed folder.
+        A list of ``(folder, matched, errors)`` tuples for each processed folder.
     """
     db = SQLiteEtreeDB(db_path)
     results = []
@@ -65,12 +66,12 @@ def validate_folders(folders: Iterable[str], db_path: str = "db/etree_scrape.db"
             results.append(check_and_rename(fld, db))
         except Exception as e:
             logging.error(f"Error processing {fld}: {e}")
-            results.append((fld, False))
+            results.append((fld, False, [str(e)]))
     db.close()
     return results
 
 
-def validate_parent_folder(parent: str, db_path: str = "db/etree_scrape.db") -> list[Tuple[str, bool]]:
+def validate_parent_folder(parent: str, db_path: str = "db/etree_scrape.db") -> list[Tuple[str, bool, list[str]]]:
     """Validate all subfolders of a parent directory.
 
     Parameters
@@ -109,13 +110,22 @@ if __name__ == "__main__":
     else:
         outcomes = validate_folders(args.folders, args.db)
     mismatches = []
-    for folder, matched in outcomes:
+    errors: list[str] = []
+    for folder, matched, ferr in outcomes:
         status = "matched" if matched else "no match"
         if status == "matched":
             print(f"{folder}: {status}")
+            errors.extend(ferr)
         else:
             mismatches.append(folder)
     if mismatches:
         print(f"The following {len(mismatches)} items did not match an existing shnid:")
         for folder in mismatches:
             print(folder)
+    if errors:
+        print("Fingerprint verification errors:")
+        for err in errors:
+            print(err)
+            logging.error(err)
+    else:
+        print("all files verified successfully")

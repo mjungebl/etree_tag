@@ -337,6 +337,7 @@ class RecordingFolder:
             ff.SaveFfp()
             self.fingerprint_file = self.folder / fname
         ff.verify()
+        return ff.result, ff.errors
 
 
 class MusicFile:
