@@ -92,9 +92,14 @@ def validate_parent_folder(parent: str, db_path: str = "db/etree_scrape.db") -> 
 if __name__ == "__main__":
     import argparse
 
+    parent_folder = r"X:\Downloads\_FTP\_Concerts_Unofficial\_renamed2\GD_Originals"
+
     parser = argparse.ArgumentParser(description="Validate recording folders against the database")
     parser.add_argument("folders", nargs="*", help="Folder paths to validate")
-    parser.add_argument("--parent", help="Parent directory containing show folders")
+    if parent_folder:
+        parser.add_argument("--parent", default=parent_folder, help="Parent directory containing show folders")
+    else:
+        parser.add_argument("--parent", help="Parent directory containing show folders")
     parser.add_argument("--db", default="db/etree_scrape.db", help="Path to SQLite database")
     args = parser.parse_args()
 
