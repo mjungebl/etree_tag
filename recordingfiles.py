@@ -2,6 +2,7 @@ from pathlib import Path
 from mutagen.flac import FLAC, Picture
 import logging
 from sqliteetreedb import SQLiteEtreeDB, EtreeRecording
+from losslessfiles import ffp
 import re
 from datetime import datetime
 
@@ -318,6 +319,24 @@ class RecordingFolder:
 
             # Reinitialize to update all path-based attributes
             self.__init__(str(new_path), self.etree_db)
+
+    def verify_fingerprint(self):
+        """Verify FLAC files using an ffp checksum file.
+
+        If ``self.fingerprint_file`` exists, it is read and used for
+        verification. If not, a new fingerprint file is generated from
+        ``self.musicfiles`` before verification.
+        """
+        if self.fingerprint_file and self.fingerprint_file.exists():
+            ff = ffp(str(self.folder), self.fingerprint_file.name)
+            ff.readffpfile()
+        else:
+            sigs = {m.name: m.checksum for m in self.musicfiles}
+            fname = f"{self.folder.name}.ffp"
+            ff = ffp(str(self.folder), fname, sigs)
+            ff.SaveFfp()
+            self.fingerprint_file = self.folder / fname
+        ff.verify()
 
 
 class MusicFile:

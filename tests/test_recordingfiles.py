@@ -27,6 +27,7 @@ mutagen.flac = flac_mod
 sys.modules.setdefault('mutagen', mutagen)
 sys.modules.setdefault('mutagen.flac', flac_mod)
 
+import recordingfiles
 from recordingfiles import RecordingFolder
 
 
@@ -50,3 +51,48 @@ def test_fallback_txt_detection(tmp_path: Path):
     # Should fall back to the only txt file
     assert rec.info_file.name == 'notes.txt'
     assert rec.read_info() == 'info contents'
+
+
+def test_verify_fingerprint_existing(tmp_path, monkeypatch):
+    ffp_file = tmp_path / "check.ffp"
+    ffp_file.write_text("dummy")
+    rec = RecordingFolder(str(tmp_path))
+
+    calls = []
+
+    class DummyFfp:
+        def __init__(self, loc, name, signatures=None, metaflacpath=None, flacpath=None):
+            calls.append(("init", loc, name, signatures))
+        def readffpfile(self):
+            calls.append("read")
+        def verify(self):
+            calls.append("verify")
+
+    monkeypatch.setattr(recordingfiles, "ffp", DummyFfp)
+
+    rec.verify_fingerprint()
+    assert calls == [("init", str(tmp_path), "check.ffp", None), "read", "verify"]
+
+
+def test_verify_fingerprint_generate(tmp_path, monkeypatch):
+    rec = RecordingFolder(str(tmp_path))
+    rec.musicfiles = [types.SimpleNamespace(name="a.flac", checksum="111"),
+                      types.SimpleNamespace(name="b.flac", checksum="222")]
+
+    calls = []
+
+    class DummyFfp:
+        def __init__(self, loc, name, signatures=None, metaflacpath=None, flacpath=None):
+            self.signatures = signatures or {}
+            calls.append(("init", loc, name, dict(self.signatures)))
+        def SaveFfp(self):
+            calls.append("save")
+        def verify(self):
+            calls.append("verify")
+
+    monkeypatch.setattr(recordingfiles, "ffp", DummyFfp)
+
+    rec.verify_fingerprint()
+    expected_file = tmp_path / f"{tmp_path.name}.ffp"
+    assert rec.fingerprint_file == expected_file
+    assert ("save" in calls) and ("verify" in calls)
