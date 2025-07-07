@@ -53,3 +53,19 @@ def test_overwrite(tmp_path: Path):
 
     extract_archives(zdir, target=dest, overwrite=True)
     assert (dest / "folder" / "file.txt").read_text() == "new"
+
+
+def test_zip_with_directory_entry(tmp_path: Path):
+    """Zip files may contain an explicit folder entry."""
+    zdir = tmp_path / "z"
+    zdir.mkdir()
+    zip_path = zdir / "f.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("folder/", "")
+        zf.writestr("folder/a.txt", "A")
+        zf.writestr("folder/b.txt", "B")
+
+    extract_archives(zdir)
+
+    assert (zdir / "folder" / "a.txt").read_text() == "A"
+    assert (zdir / "folder" / "b.txt").read_text() == "B"

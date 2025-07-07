@@ -30,10 +30,18 @@ def _root_folder_if_single(names: list[str]) -> str | None:
             continue
         parts = Path(name).parts
         if len(parts) == 1:
-            return None  # file at root level
+            # A single path component could be a directory entry in the
+            # archive (e.g. ``folder/``). When the entry does not end with a
+            # path separator it's a file at the archive root, which means
+            # there's no single parent folder.
+            if not name.endswith(('/', '\\')):
+                return None
+            candidate = parts[0]
+        else:
+            candidate = parts[0]
         if root is None:
-            root = parts[0]
-        elif root != parts[0]:
+            root = candidate
+        elif root != candidate:
             return None
     return root
 
