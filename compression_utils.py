@@ -6,6 +6,7 @@ import logging
 import shutil
 from pathlib import Path
 import zipfile
+from typing import Iterable, Tuple
 
 try:
     import rarfile
@@ -44,6 +45,51 @@ def _root_folder_if_single(names: list[str]) -> str | None:
         elif root != candidate:
             return None
     return root
+
+
+def _collect_directory_info(names: Iterable[str], root: str | None) -> tuple[set[Path], set[Path]]:
+    """Return expected and skipped directories from *names*.
+
+    Parameters
+    ----------
+    names:
+        Iterable of archive member names.
+    root:
+        Optional root folder returned by :func:`_root_folder_if_single`.
+
+    Returns
+    -------
+    tuple
+        ``(expected, skipped)`` where each item is a set of :class:`Path`
+        objects relative to the destination directory. ``skipped`` contains
+        directories ignored because they are hidden.
+    """
+    expected: set[Path] = set()
+    skipped: set[Path] = set()
+    for name in names:
+        path = Path(name)
+        parts = list(path.parts)
+        if root and parts and parts[0] == root:
+            parts = parts[1:]
+        if not parts:
+            continue
+        rel_path = Path(*parts)
+        is_hidden = _is_hidden(name)
+        # include the directory itself for explicit dir entries
+        if name.endswith(("/", "\\")):
+            target = rel_path
+            if is_hidden:
+                skipped.add(target)
+            else:
+                expected.add(target)
+        for parent in rel_path.parents:
+            if parent == Path("."):
+                continue
+            if is_hidden:
+                skipped.add(parent)
+            else:
+                expected.add(parent)
+    return expected, skipped
 
 
 def _extract_member(reader, member, dest: Path, overwrite: bool) -> None:
@@ -96,6 +142,7 @@ def extract_archives(directory: str | Path, target: str | Path | None = None, ov
                     dest = dest_base if root else dest_base / item.stem
                     if dest != dest_base:
                         dest.mkdir(parents=True, exist_ok=True)
+                    expected, skipped = _collect_directory_info(names, root)
                     for member in archive.infolist():
                         if _is_hidden(member.filename):
                             continue
@@ -110,11 +157,23 @@ def extract_archives(directory: str | Path, target: str | Path | None = None, ov
                     dest = dest_base if root else dest_base / item.stem
                     if dest != dest_base:
                         dest.mkdir(parents=True, exist_ok=True)
+                    expected, skipped = _collect_directory_info(names, root)
                     for member in archive.infolist():
                         if _is_hidden(member.filename):
                             continue
                         base_dest = dest_base if root else dest
                         _extract_member(archive, member, base_dest, overwrite)
+
+            # validate directories
+            missing = [d for d in expected if not (dest / d).is_dir()]
+            if missing:
+                logging.warning(
+                    f"Missing directories after extracting {item.name}: {missing}"
+                )
+            if skipped:
+                logging.info(
+                    f"Skipped directories from {item.name}: {sorted(skipped)}"
+                )
         except Exception as e:  # pragma: no cover - errors logged
             logging.error(f"Failed to extract {item}: {e}")
             print(f"Error extracting {item}: {e}")
