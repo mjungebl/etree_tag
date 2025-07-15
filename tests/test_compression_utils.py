@@ -108,3 +108,16 @@ def test_trailing_space_in_folder_name(tmp_path: Path):
     extract_archives(zdir)
 
     assert (zdir / "folder" / "file.txt").read_text() == "X"
+
+
+def test_quotes_in_file_name(tmp_path: Path):
+    """Double quotes in file names should be stripped."""
+    zdir = tmp_path / "z"
+    zdir.mkdir()
+    zip_path = zdir / "quote.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr('folder/"a".txt', "Q")
+
+    extract_archives(zdir)
+
+    assert (zdir / "folder" / "a.txt").read_text() == "Q"
