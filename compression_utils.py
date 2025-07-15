@@ -15,8 +15,14 @@ except Exception:  # pragma: no cover - rarfile is optional
 
 
 def _normalize(name: str) -> Path:
-    """Return ``Path`` for ``name`` using ``/`` as separator."""
-    return Path(name.replace("\\", "/"))
+    """Return ``Path`` for ``name`` using ``/`` as separator.
+
+    Trailing spaces in each path component are stripped to avoid issues with
+    archives that contain folders with a trailing space in the name.
+    """
+    name = name.replace("\\", "/")
+    cleaned = "/".join(part.rstrip() for part in name.split("/"))
+    return Path(cleaned)
 
 
 def _is_hidden(name: str) -> bool:

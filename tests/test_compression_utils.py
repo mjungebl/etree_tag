@@ -94,3 +94,17 @@ def test_root_with_backslashes(tmp_path: Path):
     extract_archives(zdir, target=out)
 
     assert (out / "root" / "a.txt").read_text() == "A"
+
+
+def test_trailing_space_in_folder_name(tmp_path: Path):
+    """Folder names ending with spaces should be normalized."""
+    zdir = tmp_path / "z"
+    zdir.mkdir()
+    zip_path = zdir / "space.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("folder /", "")
+        zf.writestr("folder /file.txt", "X")
+
+    extract_archives(zdir)
+
+    assert (zdir / "folder" / "file.txt").read_text() == "X"
