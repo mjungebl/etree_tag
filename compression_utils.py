@@ -47,15 +47,13 @@ def _root_folder_if_single(names: list[str]) -> str | None:
     return root
 
 
-def _collect_directory_info(names: Iterable[str], root: str | None) -> tuple[set[Path], set[Path]]:
-    """Return expected and skipped directories from *names*.
+def _collect_directory_info(names: Iterable[str]) -> tuple[set[Path], set[Path]]:
+    """Return expected and skipped directories from *names* as they appear in the archive.
 
     Parameters
     ----------
     names:
         Iterable of archive member names.
-    root:
-        Optional root folder returned by :func:`_root_folder_if_single`.
 
     Returns
     -------
@@ -69,8 +67,6 @@ def _collect_directory_info(names: Iterable[str], root: str | None) -> tuple[set
     for name in names:
         path = Path(name)
         parts = list(path.parts)
-        if root and parts and parts[0] == root:
-            parts = parts[1:]
         if not parts:
             continue
         rel_path = Path(*parts)
@@ -142,7 +138,7 @@ def extract_archives(directory: str | Path, target: str | Path | None = None, ov
                     dest = dest_base if root else dest_base / item.stem
                     if dest != dest_base:
                         dest.mkdir(parents=True, exist_ok=True)
-                    expected, skipped = _collect_directory_info(names, root)
+                    expected, skipped = _collect_directory_info(names)
                     for member in archive.infolist():
                         if _is_hidden(member.filename):
                             continue
@@ -157,7 +153,7 @@ def extract_archives(directory: str | Path, target: str | Path | None = None, ov
                     dest = dest_base if root else dest_base / item.stem
                     if dest != dest_base:
                         dest.mkdir(parents=True, exist_ok=True)
-                    expected, skipped = _collect_directory_info(names, root)
+                    expected, skipped = _collect_directory_info(names)
                     for member in archive.infolist():
                         if _is_hidden(member.filename):
                             continue
