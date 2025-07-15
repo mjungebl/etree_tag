@@ -17,11 +17,16 @@ except Exception:  # pragma: no cover - rarfile is optional
 def _normalize(name: str) -> Path:
     """Return ``Path`` for ``name`` using ``/`` as separator.
 
-    Trailing spaces in each path component are stripped to avoid issues with
-    archives that contain folders with a trailing space in the name.
+    Trailing spaces and any double quotes in each path component are stripped to
+    avoid issues with archives that contain problematic characters in the
+    entries.
     """
     name = name.replace("\\", "/")
-    cleaned = "/".join(part.rstrip() for part in name.split("/"))
+    cleaned_parts = []
+    for part in name.split("/"):
+        part = part.rstrip().replace('"', "")
+        cleaned_parts.append(part)
+    cleaned = "/".join(cleaned_parts)
     return Path(cleaned)
 
 
