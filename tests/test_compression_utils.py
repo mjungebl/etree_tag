@@ -69,3 +69,28 @@ def test_zip_with_directory_entry(tmp_path: Path):
 
     assert (zdir / "folder" / "a.txt").read_text() == "A"
     assert (zdir / "folder" / "b.txt").read_text() == "B"
+
+
+def test_extract_backslash_paths(tmp_path: Path):
+    """Paths with backslashes should be normalized."""
+    zdir = tmp_path / "z"
+    zdir.mkdir()
+    zip_path = zdir / "bs.zip"
+    _make_zip(zip_path, {"dir\\sub\\file.txt": "X"})
+
+    extract_archives(zdir)
+
+    assert (zdir / "dir" / "sub" / "file.txt").read_text() == "X"
+
+
+def test_root_with_backslashes(tmp_path: Path):
+    zdir = tmp_path / "z"
+    zdir.mkdir()
+    out = tmp_path / "out"
+    out.mkdir()
+    zip_path = zdir / "root.zip"
+    _make_zip(zip_path, {"root\\a.txt": "A"})
+
+    extract_archives(zdir, target=out)
+
+    assert (out / "root" / "a.txt").read_text() == "A"

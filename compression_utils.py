@@ -6,7 +6,7 @@ import logging
 import shutil
 from pathlib import Path
 import zipfile
-from typing import Iterable, Tuple
+from typing import Iterable
 
 try:
     import rarfile
@@ -14,9 +14,14 @@ except Exception:  # pragma: no cover - rarfile is optional
     rarfile = None
 
 
+def _normalize(name: str) -> Path:
+    """Return ``Path`` for ``name`` using ``/`` as separator."""
+    return Path(name.replace("\\", "/"))
+
+
 def _is_hidden(name: str) -> bool:
     """Return True if any component of *name* looks like a hidden/system file."""
-    parts = Path(name).parts
+    parts = _normalize(name).parts
     for p in parts:
         if p.startswith(".") or p.startswith("__MACOSX"):
             return True
@@ -29,7 +34,7 @@ def _root_folder_if_single(names: list[str]) -> str | None:
     for name in names:
         if _is_hidden(name):
             continue
-        parts = Path(name).parts
+        parts = _normalize(name).parts
         if len(parts) == 1:
             # A single path component could be a directory entry in the
             # archive (e.g. ``folder/``). When the entry does not end with a
@@ -65,7 +70,7 @@ def _collect_directory_info(names: Iterable[str]) -> tuple[set[Path], set[Path]]
     expected: set[Path] = set()
     skipped: set[Path] = set()
     for name in names:
-        path = Path(name)
+        path = _normalize(name)
         parts = list(path.parts)
         if not parts:
             continue
@@ -90,7 +95,8 @@ def _collect_directory_info(names: Iterable[str]) -> tuple[set[Path], set[Path]]
 
 def _extract_member(reader, member, dest: Path, overwrite: bool) -> None:
     """Extract a single archive member to *dest* respecting *overwrite*."""
-    target = dest / member.filename
+    name = member.filename
+    target = dest / _normalize(name)
     if hasattr(member, "is_dir"):
         is_directory = member.is_dir()  # zipfile
     else:
