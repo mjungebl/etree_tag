@@ -5,6 +5,9 @@ import csv
 import os
 import shutil
 import zipfile
+import lcdb_graphql as lcdb
+import re
+from losslessfiles import parse_st5, parse_flac_fingerprint, parse_md5
 
 class SQLiteEtreeDB:
     def __init__(self, db_path="db/etree_tag_db.db", log_level=logging.ERROR):
@@ -114,10 +117,13 @@ class SQLiteEtreeDB:
                 (2, 'Grateful Dead', 'gd'),
                 (4, 'Phish', 'ph'),
                 (12, 'Garcia', 'jg'),
+                (39,'Phil Lesh & Friends','phil'),
+                (85,'Trey Anastasio','trey'),
                 (847, 'Grateful Dead Compilations', 'gd'),
                 (28494, 'Grateful Dead Interviews', 'gd'),
                 (8515, 'Pigpen', 'pigpen'),
                 (40644, 'Furthur', 'furthur')
+                
             ]
             self.cursor.executemany(
                 "INSERT OR REPLACE INTO artists (artistid, ArtistName, ArtistAbbrev) VALUES (?, ?, ?);",
@@ -221,6 +227,7 @@ class SQLiteEtreeDB:
         except Exception as e:
             logging.error(f"Error inserting folder_shnid_log record {shnid, folder_name,timestamp}: {e}")
             self.conn.rollback()
+
     def store_signatures(self, records):
         """Stores a list of signature records into the 'signatures' table."""
         try:
@@ -235,28 +242,6 @@ class SQLiteEtreeDB:
 
         except sqlite3.Error as e:
             logging.error(f"SQLite error in store_signatures: {e}")
-
-    # def store_artist_events(self, records):
-    #     """Stores or updates artist event records in 'shnlist' table."""
-    #     try:
-    #         for row in records:
-    #             shnid = int(row[5])
-    #             self.cursor.execute("""
-    #                 INSERT INTO shnlist (Date, VenueSource, CircDateAddedSource, ChecksumsSource, Source, shnid,artist_id)
-    #                 VALUES (?, ?, ?, ?, ?, ?, ?)
-    #                 ON CONFLICT(shnid) DO UPDATE SET
-    #                     Date=excluded.Date,
-    #                     VenueSource=excluded.VenueSource,
-    #                     CircDateAddedSource=excluded.CircDateAddedSource,
-    #                     ChecksumsSource=excluded.ChecksumsSource,
-    #                     Source=excluded.Source,
-    #                     artist_id=excluded.artist_id
-    #             """, row)
-    #             logging.info(f"Added Shnid: {shnid} to database")
-    #         self.conn.commit()
-
-    #     except sqlite3.Error as e:
-    #         logging.error(f"SQLite error in store_artist_events: {e}")
 
     def store_artist_events(self, records):
         """Stores or updates artist event records in 'shnlist' table."""
@@ -834,6 +819,184 @@ class SQLiteEtreeDB:
             logging.error(f"error in get_local_checksum_matches: {e}")
             raise ValueError(f'Error in file get_local_checksum_matches: {e}')
         return (list(checksum_matches), b_unmatched_exists)
+
+    def convert_date_format(self, date_str):
+        """
+        Converts a date like "02/13/97" to "1997-02-13". If the parsed date
+        appears to be in the future (e.g. 2060 instead of 1960), subtracts 100 years.
+        If parsing fails, returns the original string.
+        """
+        try:
+            date_obj = datetime.datetime.strptime(date_str, "%m/%d/%y")
+            # If the date is in the future, adjust it by subtracting 100 years.
+            if date_obj > datetime.datetime.now():
+                try:
+                    date_obj = date_obj.replace(year=date_obj.year - 100)
+                except ValueError:
+                    date_obj = date_obj.replace(month=2, day=28, year=date_obj.year - 100)
+            return date_obj.strftime("%Y-%m-%d")
+        except ValueError:
+            return date_str
+
+    def fix_source_column(self, source_str, artist_name):
+        """
+        First, if the source string starts with "artist_name:" (e.g. "Phish:"), remove that prefix.
+        Then, if the source string starts with "flac" followed by a 4-digit bitrate, ensure it is
+        immediately followed by a semicolon and a space.
+        
+        Examples:
+        "Phish: flac2496, Master"  -> "flac2496; Master"
+        "Phish: flac2496.Master"    -> "flac2496; Master"
+        "Phish: flac2496Master"     -> "flac2496; Master"
+        """
+        # Remove the artist prefix if present.
+        initial_replace = f"{artist_name}:"
+        source_str = source_str.replace(initial_replace, "").strip()
+
+        source_str = re.sub(r"<.*?>", "", source_str)
+        # This regex captures the "flac" part with 4 digits, any punctuation (or none), and the rest.
+        pattern = re.compile(r'^(flac\d{4})([,.;]?\s*)(.*)$', re.IGNORECASE)
+        match = pattern.match(source_str)
+        if match:
+            flac_part = match.group(1)
+            rest = match.group(3)
+            # Always force the separator to be "; " (even if rest is empty, include a trailing space)
+            return f"{flac_part}; {rest}" if rest else f"{flac_part}; "
+        return source_str
+
+    def get_remote_checksum_matches(self,checksums:list):
+        """
+        Uses the etree-lcdb module to find remote matches for the given checksums.
+        Args:
+            checksums (list): A list of checksums to search for.
+        Returns:
+        """
+        try:
+            print(f"running get_remote_checksum_matches for {len(checksums)} checksums")
+            checksums_found = {}  
+            performances_found = {}
+            shnids_to_add = []
+            checksumfiles = {}
+            checksumfilecontent = {}
+            #use the first checksum in the list to see if there are any remote checksums     
+            checksum = checksums[0] if checksums else None
+            if checksum is None:
+                print("No checksums provided")
+                return None
+            match_dict = lcdb.find_shnid_by_checksum(checksum)
+            if match_dict is None:
+                print("No remote match found for first checksum")
+                return None
+            shnids = lcdb.parse_shnid_by_checksum(match_dict)
+            if shnids is None:
+                print("No remote match shnids found")
+                return None
+            existing_events = self.get_existing_events()
+            
+            for shnid in shnids:
+                if shnid in existing_events:
+                    print(f"Skipping existing shnid {shnid}")
+                    continue
+                perf = lcdb.find_performance_by_shnid(shnid)
+                #print(f"{perf=}")
+                performance = lcdb.parse_performance_by_shnid(perf)
+                date = performance.get('date')
+                print(f"{date=}")
+                if date:
+                    date = self.convert_date_format(date)
+                venue = performance.get('venue','')
+                city = performance.get('city','')
+                state = performance.get('state','')
+                venue_source = f"{venue}, {city}, {state}".strip().strip(',')
+                circdate = performance.get('circdate','')
+                source = performance.get('comments','')
+                artist_id = performance.get('artist_id',None)
+                artist_name = performance.get('artist_name','')
+                source = self.fix_source_column(source, artist_name)
+                print(f"Found remote performance for shnid {shnid}: {date} {venue_source} {circdate} {source}")
+                #INSERT INTO shnlist (Date, VenueSource, CircDateAddedSource, ChecksumsSource, Source, shnid,artist_id,Venue,City)
+                record = [date, venue_source, circdate, 'N/A', source, shnid, artist_id]
+                shnids_to_add.append(record)
+#    DESIRED_COLUMNS = [
+#         "Date",
+#         "Venue Source",
+#         "Circ Date - Added Source",
+#         "Checksums Source",
+#         "# Source"
+#     ]
+#     FINAL_COLUMNS = DESIRED_COLUMNS + ["shnid"]
+#      
+                print(f"{performances_found=}")
+                chk = lcdb.find_checksums_by_shnid(shnid)
+                #print(f"{chk=}")
+                lcdb.parse_checksums_by_shnid(chk,shnid,checksums_found)
+                #print(f"checksums_found: {checksums_found}")
+                for shnid in checksums_found.keys():
+                    checksum_dict = checksums_found[shnid]
+                    fp_ext = ''
+                    for md5key in checksum_dict.keys():
+                        desc, body, modif = checksum_dict[md5key]
+                        file_lower = desc.lower() if desc else ''
+                        fingerprint_tuples = None
+                        if 'ffp' in file_lower:
+                            fingerprint_tuples = parse_flac_fingerprint(body)
+                            fp_ext = 'ffp'
+                        elif 'st5' in file_lower:
+                            fingerprint_tuples = parse_st5(body)
+                            fp_ext = 'st5'
+                        else:
+                            #assume it is an md5, which is only useful for trading
+                            fingerprint_tuples = parse_md5(body)
+                        
+                        if not fingerprint_tuples:
+                            fingerprint_tuples = parse_flac_fingerprint(body)
+                            fp_ext = 'st5'
+                        if not fingerprint_tuples:
+                            fingerprint_tuples = parse_st5(body)
+                            fp_ext = 'st5'
+                        if not fingerprint_tuples:            
+                            fingerprint_tuples = parse_md5(body)
+                            fp_ext = 'md5'
+                        if not fingerprint_tuples:
+                            raise ValueError(f'All Three parsing methods failed for {shnid=}')
+                        #print(f"Parsed {len(fingerprint_tuples)} fingerprints for shnid {shnid} md5key {md5key}")
+                        
+                        records = []
+                        if fingerprint_tuples:
+                            for audio_filename,audio_checksum in fingerprint_tuples:
+                                base_filename, ext = os.path.splitext(audio_filename)
+                                ext = ext.lstrip('.')
+                                try:
+                                    shnid_int = int(shnid)
+                                except ValueError:
+                                    shnid_int = shnid
+                                records.append((shnid_int, md5key, base_filename, ext, audio_checksum))
+                        if records:
+                            checksumfiles[md5key] = [shnid_int, desc,f"{desc}.{fp_ext}"]
+                            checksumfilecontent[md5key] = records                     
+                        #print(f"{records=}")
+                #print(f"Found remote match for shnid {shnid}")
+            if shnids_to_add:
+                print(f"Inserting {len(shnids_to_add)} new shnids")
+                self.store_artist_events(shnids_to_add)
+
+                for key, value in checksumfiles.items():
+                    checksums = sorted(checksumfilecontent[key])
+                    #below used for comparing data from files
+                    #checksums_only = [row[4] for row in md5_checksums[key]]
+                    checksumfile = (key,value[0],value[1],value[2])
+                    self.insert_checksum_file(checksumfile)
+                    self.store_signatures(checksums)
+                return True
+            else:
+                print("No new shnids to add")
+                return False
+    
+        except Exception as e:
+            logging.error(f"error in get_remote_checksum_matches: {e}")
+            raise ValueError(f'Error in file get_remote_checksum_matches: {e}')
+        #print(f"Found {len(performances_found)} remote performances")
+
 
     def vacuum_database(self):
         """

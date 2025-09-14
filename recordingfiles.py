@@ -5,6 +5,7 @@ from sqliteetreedb import SQLiteEtreeDB, EtreeRecording
 from losslessfiles import ffp
 import re
 from datetime import datetime
+#from import_show_metadata import import_show_folders
 
 class RecordingFolder:
     def __init__(self, concert_folder: str, etree_db: SQLiteEtreeDB | None = None):
@@ -42,6 +43,70 @@ class RecordingFolder:
         self.recordingtype = self._classify_folder(self.folder.name)
 
         logging.info(f"Found {len(self.musicfiles)} FLAC file(s) in {self.folder}")
+
+    # def import_show_tags(self):
+    #     """
+    #     Import show folders into the database.
+    #     This function processes each concert folder, checks for missing track titles,
+    #     and attempts to tag the files if necessary. It logs any errors encountered
+    #     during the process. If a folder is successfully tagged, it updates the database
+    #     with the new track metadata.
+    #     Args:
+    #         concert_folders (list): List of concert folder paths to process.
+    #         etree_db (SQLiteEtreeDB): Database connection object.
+    #         config: Configuration object for the tagging process.
+    #     Returns:
+    #         successfully_imported (list): List of concert folders that were successfully imported to the database.
+    #     """
+    #     successfully_imported = []
+    #     # existing_folders = []
+    #     # try:
+    #     #     with open("mismatched_folders.txt", "r", encoding="utf-8") as mismatchlogexisting:
+    #     #         existing_mismatched_folders = mismatchlogexisting.readlines()
+    #     # except FileNotFoundError:
+    #     #     existing_mismatched_folders = []
+    #     # with open("mismatched_folders.txt", "a", encoding="utf-8") as mismatchlog:
+    #         for concert_folder in concert_folders:
+    #             try:
+    #                 show = ConcertTagger(concert_folder,config,etree_db, debug=False)
+    #                 print(f'{show.etreerec.id=} {show.etreerec.md5key=} {show.folderpath=}')
+    #                 tracks = show.etreerec.tracks
+    #                 tracknames = [track.title for track in tracks]
+    #                 #print(f'{tracknames=}')
+    #                 if not tracknames:
+    #                     tracks = [track.title for track in show.folder.musicfiles]
+    #                     #for track in tracks:
+    #                     #    print(f'{track}')
+    #                     if None in tracks:
+    #                         tagged = InfoFileTagger.tag_folder(show.folderpath)
+    #                         if tagged:
+    #                             print(f'Sucessfully tagged files in folder {concert_folder}')
+    #                             show = ConcertTagger(concert_folder,config,etree_db)
+    #                             tracks = [track.title for track in show.folder.musicfiles]
+    #                         else:
+    #                             error = f'Error tagging files in folder {concert_folder}'
+    #                             print(error)
+    #                             logging.error(error)
+    #                             continue
+                        
+    #                     if None in tracks:
+    #                         missingtitlefiles = ', '.join([file.name for file in show.folder.musicfiles if file.title is None])
+    #                         error = f'Error Processing folder {concert_folder}: missing track title(s) {missingtitlefiles}'
+    #                         print(error)
+    #                         logging.error(error)
+    #                     else:
+    #                         rows = show.build_show_inserts()
+    #                         print(f"inserting {len(rows)} rows for {concert_folder}")
+    #                         show.db.insert_track_metadata(show.etreerec.id, rows,False,show.etreerec.md5key, debug = True)
+    #                         successfully_imported.append(concert_folder)
+    #                 else:
+    #                     existing_folders.append(concert_folder)
+    #                     print(f"Matching tracknames exist for {concert_folder}")
+    #             except Exception as e:
+    #                 logging.error(f'Error Processing folder {concert_folder} {e}')
+    #                 if concert_folder+'\n' not in existing_mismatched_folders:
+    #                     mismatchlog.write(f"{concert_folder}\n")
+    #     return successfully_imported, existing_folders
 
     def _classify_folder(self,folder_name: str) -> str:
         """
@@ -184,7 +249,7 @@ class RecordingFolder:
 
         if not self.checksums:
             return None
-
+        
         matches, mismatch = db.get_local_checksum_matches(self.checksums)
         if debug:
             print(f'{self.checksums=}')
@@ -192,8 +257,8 @@ class RecordingFolder:
             print(f'{mismatch=}')
 
         checksum_pairs = set()
-        if not mismatch:
-            for shnid, md5key in matches:
+        def _find_matching_pairs(match_list):
+            for shnid, md5key in match_list:
                 if debug:
                     print(f'{shnid=}', f'{md5key=}')
                 try:
@@ -214,8 +279,18 @@ class RecordingFolder:
                             return rec
                         checksum_pairs.add((sig.shnid, sig.id))
                         break
+        if not mismatch:
+            _find_matching_pairs(matches)
 
         result = None
+        if not checksum_pairs:
+            #attempt to find remote matches. If anything new is found, add it to the local db
+            remote_matches = db.get_remote_checksum_matches(self.checksums)
+            if remote_matches:
+                matches, mismatch = db.get_local_checksum_matches(self.checksums)
+                # if self.
+                if not mismatch:
+                    _find_matching_pairs(matches)
         for shnid, md5key in checksum_pairs:
             result = EtreeRecording(db, shnid, md5key)
             if self.foldershnid == result.id:

@@ -12,6 +12,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import shutil
 import re
 from datetime import datetime
+#import InfoFileTagger
+from tagger_utils import TitleBuilder
 """
 This script provides functionality for tagging FLAC files with metadata and artwork using multithreading. 
 It includes classes and functions to load configuration settings, find matching recordings, and tag files with album information and artwork.
@@ -502,154 +504,170 @@ class ConcertTagger:
 
 
 
-    def tag_album(self, clear_existing: bool = True):
-        ####DEPRECATED####
-        #TODO customise this string (separate function?)
-        #print(f'{self.etreerec.date=}')
-        album = f"{self.etreerec.date} {self.etreerec.etreevenue} "
-        if self.folder.recordingtype:
-            album += f"({self.folder.recordingtype}) "
-        if (
-            self.folder.musicfiles
-            and str(self.folder.musicfiles[0].audio.info.bits_per_sample) != "16"
-        ):
-            bitrate = (
-                f"{self.folder.musicfiles[0].audio.info.bits_per_sample}-"
-                f"{str(self.folder.musicfiles[0].audio.info.sample_rate).rstrip('0')}"
-            )
-            album += f"[{bitrate}] "
-        album += f"({self.etreerec.id})"
-        print(f'{album=}')
-        if not self.etreerec.tracks:
-            print(f'ERROR: Unable to tag track names. No Metadata found in {self.db.db_path} for {self.folderpath.as_posix()}')
-            logging.error(f'No track metadata found in {self.db.db_path} for: {self.folderpath.as_posix()}')
-        logging.info(f'Tagging {album} in {self.folderpath.as_posix()}')
-        genretag = None
-        if self.etreerec.date:
-            #todo: chenge this to something configurable and add other artists. 
-            if len(self.etreerec.date) > 4:
-                genretag = f"gd{str(self.etreerec.date[0:4])}"
-        if album:
+    # def tag_album(self, clear_existing: bool = True):
+    #     ####DEPRECATED####
+    #     #TODO customise this string (separate function?)
+    #     #print(f'{self.etreerec.date=}')
+    #     album = f"{self.etreerec.date} {self.etreerec.etreevenue} "
+    #     if self.folder.recordingtype:
+    #         album += f"({self.folder.recordingtype}) "
+    #     if (
+    #         self.folder.musicfiles
+    #         and str(self.folder.musicfiles[0].audio.info.bits_per_sample) != "16"
+    #     ):
+    #         bitrate = (
+    #             f"{self.folder.musicfiles[0].audio.info.bits_per_sample}-"
+    #             f"{str(self.folder.musicfiles[0].audio.info.sample_rate).rstrip('0')}"
+    #         )
+    #         album += f"[{bitrate}] "
+    #     album += f"({self.etreerec.id})"
+    #     print(f'{album=}')
+    #     if not self.etreerec.tracks:
+    #         print(f'ERROR: Unable to tag track names. No Metadata found in {self.db.db_path} for {self.folderpath.as_posix()}')
+    #         logging.error(f'No track metadata found in {self.db.db_path} for: {self.folderpath.as_posix()}')
+    #     logging.info(f'Tagging {album} in {self.folderpath.as_posix()}')
+    #     genretag = None
+    #     if self.etreerec.date:
+    #         #todo: chenge this to something configurable and add other artists. 
+    #         if len(self.etreerec.date) > 4:
+    #             genretag = f"gd{str(self.etreerec.date[0:4])}"
+    #     if album:
             
-            for file in self.folder.musicfiles:
+    #         for file in self.folder.musicfiles:
                 
-                try:
-                    file.audio["album"] = album
-                    file.audio["artist"] = self.etreerec.artist
-                    file.audio["albumartist"] = self.etreerec.artist
-                    if "album artist" in file.audio: #clear anything that might've already been there to clean up artist menu
-                        del file.audio["album artist"]
-                    file.audio["comment"] = self.etreerec.source
-                    if genretag:
-                        file.audio["genre"] = genretag
-                    print(file.checksum, self.etreerec.id)                        
-                    if self.etreerec.tracks:
-                        song_info =self.etreerec.get_track_by_checksum(file.checksum)
+    #             try:
+    #                 file.audio["album"] = album
+    #                 file.audio["artist"] = self.etreerec.artist
+    #                 file.audio["albumartist"] = self.etreerec.artist
+    #                 if "album artist" in file.audio: #clear anything that might've already been there to clean up artist menu
+    #                     del file.audio["album artist"]
+    #                 file.audio["comment"] = self.etreerec.source
+    #                 if genretag:
+    #                     file.audio["genre"] = genretag
+    #                 print(file.checksum, self.etreerec.id)                        
+    #                 if self.etreerec.tracks:
+    #                     song_info =self.etreerec.get_track_by_checksum(file.checksum)
                         
-                        if song_info:
-                            print(f'Song details: {song_info.title} {song_info.disc} {song_info.tracknum}')
-                            if song_info.title:
-                                file.audio["title"] = song_info.title    # Track name
-                            if song_info.disc:
-                                file.audio["discnumber"] = song_info.disc                # Disc number (as a string)
-                            if song_info.tracknum:
-                                file.audio["tracknumber"] = song_info.tracknum               # Track number (as a string)
-                        else:
-                            logging.error(f"Error tagging song details {file.path}: No matching track data found in database")
-                    file.audio.save()
-                except Exception as e:
-                    logging.error(f"Error tagging file {file.path}: {e}")
-        else:
-            logging.info(f'Skipped tags: No Album generated for folder {self.folderpath.as_posix()}')
+    #                     if song_info:
+    #                         print(f'Song details: {song_info.title} {song_info.disc} {song_info.tracknum}')
+    #                         if song_info.title:
+    #                             file.audio["title"] = song_info.title    # Track name
+    #                         if song_info.disc:
+    #                             file.audio["discnumber"] = song_info.disc                # Disc number (as a string)
+    #                         if song_info.tracknum:
+    #                             file.audio["tracknumber"] = song_info.tracknum               # Track number (as a string)
+    #                     else:
+    #                         logging.error(f"Error tagging song details {file.path}: No matching track data found in database")
+    #                 file.audio.save()
+    #             except Exception as e:
+    #                 logging.error(f"Error tagging file {file.path}: {e}")
+    #     else:
+    #         logging.info(f'Skipped tags: No Album generated for folder {self.folderpath.as_posix()}')
 
-    def generate_title(self):
-        # Extract values from the [preferences] section.
-        year_format = config["preferences"].get("year_format",None)
-        soundboard_abbrev = config["preferences"].get("soundboard_abbrev",None)
-        aud_abbrev = config["preferences"].get("aud_abbrev",None)
-        matrix_abbrev = config["preferences"].get("matrix_abbrev",None)
-        ultramatrix_abbrev = config["preferences"].get("ultramatrix_abbrev",None)
+    # def generate_title(self):
+    #     # Extract values from the [preferences] section.
+    #     year_format = config["preferences"].get("year_format",None)
+    #     soundboard_abbrev = config["preferences"].get("soundboard_abbrev",None)
+    #     aud_abbrev = config["preferences"].get("aud_abbrev",None)
+    #     matrix_abbrev = config["preferences"].get("matrix_abbrev",None)
+    #     ultramatrix_abbrev = config["preferences"].get("ultramatrix_abbrev",None)
 
-        # Extract values from the [album_tag] section.
-        include_bitrate = config["album_tag"].get("include_bitrate",True)
-        include_bitrate_not16_only = config["album_tag"].get("include_bitrate_not16_only",True)
-        include_venue = config["album_tag"].get("include_venue",True)
-        include_city = config["album_tag"].get("include_city",True)
-        include_shnid = config["album_tag"].get("include_shnid",True)
-        order_temp = config["album_tag"].get("order",None)
-        order = order_temp.copy()
-        prefix_temp = config["album_tag"].get("prefix",None)
-        prefix = prefix_temp.copy()
-        suffix_temp = config["album_tag"].get("suffix",None)
-        suffix = suffix_temp.copy()
-        title_year = extract_year(self.etreerec.date)
-        show_date = self.etreerec.date
-        #if the date is in the incorrect format, make an attempt to fix it for the title
-        if title_year:
-            if str(title_year) != self.etreerec.date[0:4]:
+    #     # Extract values from the [album_tag] section.
+    #     include_bitrate = config["album_tag"].get("include_bitrate",True)
+    #     include_bitrate_not16_only = config["album_tag"].get("include_bitrate_not16_only",True)
+    #     include_venue = config["album_tag"].get("include_venue",True)
+    #     include_city = config["album_tag"].get("include_city",True)
+    #     include_shnid = config["album_tag"].get("include_shnid",True)
+    #     order_temp = config["album_tag"].get("order",None)
+    #     order = order_temp.copy()
+    #     prefix_temp = config["album_tag"].get("prefix",None)
+    #     prefix = prefix_temp.copy()
+    #     suffix_temp = config["album_tag"].get("suffix",None)
+    #     suffix = suffix_temp.copy()
+    #     title_year = extract_year(self.etreerec.date)
+    #     show_date = self.etreerec.date
+    #     #if the date is in the incorrect format, make an attempt to fix it for the title
+    #     if title_year:
+    #         if str(title_year) != self.etreerec.date[0:4]:
                 
-                if '/' in self.etreerec.date:
-                    splitter = '/'
-                elif '-' in self.etreerec.date:
-                    splitter = '-'
-                if splitter:
-                    show_date_parts = self.etreerec.date.split(splitter)
-                    #print(f'{show_date_parts=}')
-                    if len(show_date_parts) == 3:
-                        show_date = f"{str(title_year)}-{show_date_parts[0]}-{show_date_parts[1]}"
-        if year_format.lower() == 'yy':
-            show_date = show_date[2:]
-        #if the order is peecified and the prefix and suffix values are the same length, build the format string        
-        recording_type = self.folder.recordingtype
-        if recording_type:
-            if recording_type.lower() == 'sbd' and soundboard_abbrev:
-                recording_type = soundboard_abbrev
-            elif recording_type.lower() == 'aud' and aud_abbrev:
-                recording_type = aud_abbrev
-            elif recording_type.lower() == 'matrix' and matrix_abbrev:
-                recording_type = matrix_abbrev
-            elif recording_type.lower() == 'ultramatrix' and ultramatrix_abbrev:
-                recording_type = ultramatrix_abbrev
-        city = self.etreerec.city
-        venue = self.etreerec.etreevenue
-        shnid = self.etreerec.id
-        bitrate = f'{str(self.folder.musicfiles[0].audio.info.bits_per_sample)}-{str(self.folder.musicfiles[0].audio.info.sample_rate).rstrip("0")}'
-        if include_bitrate_not16_only and str(self.folder.musicfiles[0].audio.info.bits_per_sample) == '16':
-            include_bitrate = False
-        #clean up the order list to remove any empty strings or None values
-        if (not include_venue or not venue) and 'venue' in order:
-            remove_match_from_lists([order, prefix, suffix], 'venue')
-        if (not include_city or not city) and 'city' in order:
-            remove_match_from_lists([order, prefix, suffix], 'city')
-        #no need to check for an empty shnid or bitrate, won't get here if no match or no files
-        if not include_shnid and 'shnid' in order: 
-            remove_match_from_lists([order, prefix, suffix], 'shnid')
-        if not include_bitrate and 'bitrate' in order:
-            remove_match_from_lists([order, prefix, suffix], 'bitrate')
-        format_str = ''
-        if len(order) == len(prefix) == len(suffix) and order:
-            for i in range(len(order)):
-                format_str = format_str + f"{prefix[i]}{'{'}{order[i]}{'}'}{suffix[i]}"
-        else :
-            format_str = None
-        album = None
-        try:
-            if format_str:
-                album = format_str.format(**locals())
-        except Exception as e:
-            logging.error(f"Error formatting album title. reverting to default logic. {shnid=}: {e}")
-        if not album:
-            # Default album title generation logic
-            album = f'{show_date} {venue} {city} '
-            if recording_type:
-                album = album + f'{(recording_type)} '
-            if include_bitrate and self.folder.musicfiles:
-                if str(self.folder.musicfiles[0].audio.info.bits_per_sample) != '16' or not include_bitrate_not16_only:
-                    album = album + f'[{bitrate}] '
+    #             if '/' in self.etreerec.date:
+    #                 splitter = '/'
+    #             elif '-' in self.etreerec.date:
+    #                 splitter = '-'
+    #             if splitter:
+    #                 show_date_parts = self.etreerec.date.split(splitter)
+    #                 #print(f'{show_date_parts=}')
+    #                 if len(show_date_parts) == 3:
+    #                     show_date = f"{str(title_year)}-{show_date_parts[0]}-{show_date_parts[1]}"
+    #     if year_format.lower() == 'yy':
+    #         show_date = show_date[2:]
+    #     #if the order is peecified and the prefix and suffix values are the same length, build the format string        
+    #     recording_type = self.folder.recordingtype
+    #     if recording_type:
+    #         match recording_type.lower():
+    #             case 'sbd' if soundboard_abbrev:
+    #                 recording_type = soundboard_abbrev
+    #             case 'aud' if aud_abbrev:
+    #                 recording_type = aud_abbrev
+    #             case 'matrix' if matrix_abbrev:
+    #                 recording_type = matrix_abbrev
+    #             case 'ultramatrix' if ultramatrix_abbrev:
+    #                 recording_type = ultramatrix_abbrev
+    #             case _:
+    #                 pass  # leave as-is
+    #     city = self.etreerec.city
+    #     venue = self.etreerec.etreevenue
+    #     shnid = self.etreerec.id
+    #     bitrate = f'{str(self.folder.musicfiles[0].audio.info.bits_per_sample)}-{str(self.folder.musicfiles[0].audio.info.sample_rate).rstrip("0")}'
+    #     if include_bitrate_not16_only and str(self.folder.musicfiles[0].audio.info.bits_per_sample) == '16':
+    #         include_bitrate = False
+    #     #clean up the order list to remove any empty strings or None values
+    #     if (not include_venue or not venue) and 'venue' in order:
+    #         remove_match_from_lists([order, prefix, suffix], 'venue')
+    #     if (not include_city or not city) and 'city' in order:
+    #         remove_match_from_lists([order, prefix, suffix], 'city')
+    #     #no need to check for an empty shnid or bitrate, won't get here if no match or no files
+    #     if not include_shnid and 'shnid' in order: 
+    #         remove_match_from_lists([order, prefix, suffix], 'shnid')
+    #     if not include_bitrate and 'bitrate' in order:
+    #         remove_match_from_lists([order, prefix, suffix], 'bitrate')
 
-            album = album + f'({str(shnid)})'
+    #     # remove = {
+    #     #     k for k, keep in {
+    #     #         "venue":   include_venue and bool(venue),
+    #     #         "city":    include_city and bool(city),
+    #     #         "shnid":   include_shnid,
+    #     #         "bitrate": include_bitrate,
+    #     #     }.items() if not keep
+    #     # }
 
-        return album
+    #     # for lst in (order, prefix, suffix):
+    #     #     lst[:] = [x for x in lst if x not in remove]
+
+    #     format_str = ''
+    #     if len(order) == len(prefix) == len(suffix) and order:
+    #         for i in range(len(order)):
+    #             format_str = format_str + f"{prefix[i]}{'{'}{order[i]}{'}'}{suffix[i]}"
+    #     else :
+    #         format_str = None
+    #     album = None
+    #     try:
+    #         if format_str:
+    #             album = format_str.format(**locals())
+    #     except Exception as e:
+    #         logging.error(f"Error formatting album title. reverting to default logic. {shnid=}: {e}")
+    #     if not album:
+    #         # Default album title generation logic
+    #         album = f'{show_date} {venue} {city} '
+    #         if recording_type:
+    #             album = album + f'{(recording_type)} '
+    #         if include_bitrate and self.folder.musicfiles:
+    #             if str(self.folder.musicfiles[0].audio.info.bits_per_sample) != '16' or not include_bitrate_not16_only:
+    #                 album = album + f'[{bitrate}] '
+
+    #         album = album + f'({str(shnid)})'
+
+    #     return album
 
 
     def tag_files(self, clear_existing_tags: bool = True, num_threads: int = None):
@@ -663,9 +681,12 @@ class ConcertTagger:
             NOTE: false does not prevent tags from being overwritten if there is a new value found. It will clear everything                 
             num_threads (int, optional): Number of threads to use. Defaults to os.cpu_count()-1.
         """
-        album = self.generate_title()
-        print(f'{album=}')
+        #album = self.generate_title()
         
+        tb = TitleBuilder(self.etreerec, self.folder, self.config)
+        album = tb.generate_title()
+        print(f'{album=}')
+        #print(f'{title_test=}, {album==title_test}')
         if not self.etreerec.tracks:
             print(f'ERROR: Unable to tag track names. No Metadata found in {self.db.db_path} for {self.folderpath.as_posix()}')
             logging.error(f'No track metadata found in {self.db.db_path} for: {self.folderpath.as_posix()}')
@@ -702,7 +723,7 @@ class ConcertTagger:
                 logging.info(f"Existing artwork files found: {existing_artworks}")  # Debugging log
 
 
-            # 🚨 **If artwork already exists and we are NOT clearing it, moake a note of this**
+            # 🚨 **If artwork already exists and we are NOT clearing it, make a note of this**
             if existing_artworks and not clear_existing_artwork:
                 logging.info(f"Existing artwork found ({existing_artworks}), and replacement is disabled. Skipping copy.")
 
@@ -857,7 +878,8 @@ class ConcertTagger:
         records = []
         for file in self.folder.musicfiles:
             #shnid_val, disc_number, track_number, title, fingerprint, bit_depth, frequency, length_val, channels, filename = rec
-            records.append(( shnid,
+            records.append((
+                shnid,
                 file.disc,
                 file.tracknum,
                 file.title,
@@ -868,7 +890,7 @@ class ConcertTagger:
                 file.audio.info.channels,
                 file.name))
         return records
-    
+
 if __name__ == "__main__":
     from time import perf_counter
     start_time = perf_counter()
@@ -877,11 +899,10 @@ if __name__ == "__main__":
     config_file = os.path.join(os.path.dirname(__file__),"config.toml")
     config = load_config(config_file)
 
-
     etreedb = SQLiteEtreeDB(r'db/etree_scrape.db') #make sure this is outside the loop called in the below function
     concert_folders = []
 
-# two level deep folder enumeration for processing
+    # two level deep folder enumeration for processing
     #parentofparents =r'M:/To_Tag'
     # parentofparents = r'/Users/rjl/Documents/GitHub/etree_tag/test'
     # parentlist = sorted([f.path.replace('\\','/') for f in os.scandir(parentofparents) if f.is_dir()])
@@ -890,16 +911,16 @@ if __name__ == "__main__":
     #         continue
     #     concert_folders.extend(sorted([f.path.replace('\\','/') for f in os.scandir(parentfolder) if f.is_dir()]))
 
-#single parent folder
-    parentfolder = r'X:\Downloads\_FTP\gdead.9999.updates_imported'
+    #single parent folder
+    parentfolder = r'X:\Downloads\_FTP\_Tag_test'
     concert_folders = sorted([f.path.replace('\\','/') for f in os.scandir(parentfolder) if f.is_dir()])
 
-#if using a single folder, or specific folders use a python list of path(s):
-#best for getting started and testing
-#     concert_folders = [
-#            r"X:\Downloads\_FTP\gdead.9999.updates\gd1977-05-17.18554.Tuscaloosa,AL.sbd.weiner.flac16"
-# ,r"X:\Music\Concerts\GD_Tagged\gd1976-10-01.170521.Indianapolis,IN.mtx.seamons.ht174.flac16"
-#      ]    
+    #if using a single folder, or specific folders use a python list of path(s):
+    #best for getting started and testing
+    #concert_folders = [
+    #r"X:\Downloads\_FTP\gdead.9999.updates\gd1977-05-17.18554.Tuscaloosa,AL.sbd.weiner.flac16"
+    #,r"X:\Music\Concerts\GD_Tagged\gd1976-10-01.170521.Indianapolis,IN.mtx.seamons.ht174.flac16"
+    #]
     #concert_folders must be a list of folders that contain folders. 
     #Don't pass without parent directory, it won't be good
     #TODO, add some type of check when scanning the first folder

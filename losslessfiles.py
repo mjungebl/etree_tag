@@ -355,6 +355,105 @@ class md5:
             msg = f'Error reading file {md5Name}: {e}'
             #print(msg)
             self.errors.append(msg)
+
+def parse_flac_fingerprint(filecontent):
+    """
+    Parse lines in FFP format and return a list of records.
+
+    Each non-empty line is expected to be in the format:
+        audio_filename:audio_checksum
+
+    Parameters:
+        lines (iterable): An iterable of lines (strings) to parse.
+    Returns:
+        List[tuple]: A list of tuples with the parsed information.
+    """
+    lines = filecontent.splitlines()
+    records = []
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        #ignore comments
+        if not line.startswith(';'):
+            if ':' in line:
+                # FFP expected format: "audio_filename:audio_checksum"
+                audio_filename, audio_checksum = line.split(":", 1)
+                audio_filename = audio_filename.strip()
+                audio_checksum = audio_checksum.strip()
+                records.append((audio_filename,audio_checksum))
+            else:
+                print(f"Unexpected ffp line format: {line}")
+    return records
+
+def parse_st5(filecontent):
+    """
+    Parse lines in st5 format and return a list of records.
+
+    Each non-empty line is expected to be in the format:
+        audio_filename:audio_checksum
+
+    Parameters:
+        lines (iterable): An iterable of lines (strings) to parse.
+    Returns:
+        List[tuple]: A list of tuples with the parsed information.
+    """
+    lines = filecontent.splitlines()
+    records = []
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        #ignore comments
+        if "[shntool]" in line:
+            
+                # st5 expected format: "audio_checksum [shntool] audio_filename"
+                parts = line.split("[shntool]")
+                if len(parts) != 2:
+                    print(f"Unexpected st5 line format: {line}")
+                    continue
+                audio_checksum = parts[0].strip()
+                audio_filename = parts[1].strip()
+                records.append((audio_filename,audio_checksum))
+        else:
+            if not line.strip().startswith(';'):
+                print(f"Unexpected st5 line format: {line}")
+    return records
+
+def parse_md5(filecontent):
+    """
+    Parse lines in st5 format and return a list of records.
+
+    Each non-empty line is expected to be in the format:
+        audio_checksum *audio_filename
+
+    Parameters:
+        lines (iterable): An iterable of lines (strings) to parse.
+    Returns:
+        List[tuple]: A list of tuples with the parsed information.
+    """
+    lines = filecontent.splitlines()
+    records = []
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        #ignore comments
+        if not line.startswith(';') and not line.startswith('#'):
+            if ' *' in line:
+                # FFP expected format: "audio_filename:audio_checksum"
+                audio_checksum, audio_filename = line.split(" *", 1)
+                audio_filename = audio_filename.strip()
+                audio_checksum = audio_checksum.strip()
+                records.append((audio_filename,audio_checksum))
+            elif ' ' in line:
+                audio_checksum, audio_filename = line.split("  ", 1)
+                audio_filename = audio_filename.strip()
+                audio_checksum = audio_checksum.strip()
+                records.append((audio_filename,audio_checksum))                
+            else:
+                print(f"Unexpected md5 line format: {line}")
+    return records            
 ##################################################################
 #FOLDER MANAGEMENT FUNCTIONS
 ##################################################################
