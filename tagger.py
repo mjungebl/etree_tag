@@ -3,7 +3,6 @@ from recordingfiles import RecordingFolder
 from sqliteetreedb import SQLiteEtreeDB
 #from InfoFileTagger_class import FlacInfoFileTagger
 import logging
-import tomllib
 import os
 from tqdm import tqdm
 
@@ -14,6 +13,8 @@ import shutil
 import re
 from datetime import datetime
 from typing import Optional
+
+from services.config import AppConfig, load_app_config
 
 # import InfoFileTagger
 from tagger_utils import TitleBuilder
@@ -53,21 +54,10 @@ Example usage:
 """
 
 
-def load_config(config_path: str) -> dict:
-    """
-    Load a TOML configuration file and return the configuration as a dictionary.
-
-    Args:
-        config_path (str): The path to the TOML configuration file.
-
-    Returns:
-        dict: A dictionary containing the configuration settings.
-    """
+def load_config(config_path: str) -> AppConfig:
+    """Load configuration into a structured AppConfig dataclass."""
     try:
-        with open(config_path, "rb") as f:
-            config = tomllib.load(f)
-        return config
-
+        return load_app_config(config_path)
     except Exception as e:
         print(f"Error loading configuration: {e}")
         raise
@@ -183,8 +173,8 @@ class ConcertTagger:
         # Store configuration for artwork search. ``artwork_folders`` maps
         # artist abbreviations to lists of directories. If an abbreviation is
         # not present, no artwork search will be performed for that artist.
-        self.artwork_folders_map = config["cover"].get("artwork_folders", {})
-        self.default_images_map = config["cover"].get("default_images", {})
+        self.artwork_folders_map = config.cover.artwork_folders
+        self.default_images_map = config.cover.default_images
         self.artwork_folders = []
         self.artworkpath = None
         self.errormsg = None
@@ -369,12 +359,8 @@ class ConcertTagger:
             num_threads (int, optional): Number of threads to use. Defaults to os.cpu_count()-1.
         """
 
-        clear_existing_artwork = self.config["cover"].get(
-            "clear_existing_artwork", False
-        )
-        retain_existing_artwork = self.config["cover"].get(
-            "retain_existing_artwork", True
-        )
+        clear_existing_artwork = self.config.cover.clear_existing_artwork
+        retain_existing_artwork = self.config.cover.retain_existing_artwork
 
         artwork_path_str = self._stage_artwork(
             clear_existing_artwork, retain_existing_artwork
@@ -424,7 +410,7 @@ class ConcertTagger:
             num_threads (int, optional): Number of threads to use. Defaults to os.cpu_count()-1.
         """
 
-        tb = TitleBuilder(self.etreerec, self.folder, self.config)
+        tb = TitleBuilder(self.etreerec, self.folder, self.config.to_mapping())
         album = tb.generate_title()
         print(f"{album=}")
         if not self.etreerec.tracks:
@@ -453,21 +439,15 @@ class ConcertTagger:
                 album_year = extract_year(self.etreerec.date)
                 genretag = f"gd{str(album_year)}"
 
-        clear_existing_artwork = self.config["cover"].get(
-            "clear_existing_artwork", False
-        )
-        retain_existing_artwork = self.config["cover"].get(
-            "retain_existing_artwork", True
-        )
+        clear_existing_artwork = self.config.cover.clear_existing_artwork
+        retain_existing_artwork = self.config.cover.retain_existing_artwork
 
         artwork_path_str = self._stage_artwork(
             clear_existing_artwork, retain_existing_artwork
         )
 
-        if self.config["preferences"]["segue_string"]:
-            gazinta_abbrev = self.config["preferences"]["segue_string"]
-        else:
-            gazinta_abbrev = ">"
+        segue = self.config.preferences.segue_string or ">"
+        gazinta_abbrev = segue
 
         args_list = []
         for file in self.folder.musicfiles:
@@ -616,5 +596,7 @@ class ConcertTagger:
                 )
             )
         return records
+
+
 
 

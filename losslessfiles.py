@@ -16,8 +16,8 @@ import re
 
 config_file = os.path.join(os.path.dirname(__file__), "config.toml")
 config = load_config(config_file)
-PathToFlac = config["supportfiles"]["flac"]
-PathToMetaflac = config["supportfiles"]["metaflac"]
+PathToFlac = config.supportfiles.get("flac")
+PathToMetaflac = config.supportfiles.get("metaflac")
 
 # print(f'{PathToFlac=} {PathToMetaflac=}')
 
@@ -102,8 +102,8 @@ class ffp:
         self.location = location
         self.name = name
         # if metaflacpath is not None:
-        self.metaflacpath = metaflacpath if metaflacpath != None else PathToMetaflac
-        self.flacpath = flacpath if flacpath != None else PathToFlac
+        self.metaflacpath = metaflacpath if metaflacpath is not None else PathToMetaflac
+        self.flacpath = flacpath if flacpath is not None else PathToFlac
         self.signatures = signatures
         self.errors = []
         self.result = []
@@ -121,7 +121,7 @@ class ffp:
             self.errors.append(msg)
         # Attempt to read the first line of the ffp file to determine if it is not encoded using utf-8. If an error occurs, reopen without the encoding parameter.
         try:
-            firstline = ffp.readline()
+            ffp.readline()
             ffp.close()
             ffp = open(ffpName, encoding="utf-8")
         except UnicodeDecodeError:
@@ -157,7 +157,6 @@ class ffp:
     def generate_checksums(self):
         """loop though all files and child directories to generate the checksums for all .flac files, storing them with the relative path"""
         DirectoryName = self.location + "/"
-        ParentDirectoryName = Path(DirectoryName).parent.as_posix()
         b_error = False
         self.signatures = {}
         for path, directories, files in os.walk(DirectoryName):
@@ -257,7 +256,7 @@ class ffp:
                 Err = None
                 message = None
                 Err, message = future.result()
-                if Err == None:
+                if Err is None:
                     # print(message)
                     # logger.info(message)
                     self.result.append(message)
@@ -265,7 +264,7 @@ class ffp:
                     self.errors.append(Err)
                     # logger.error(Err)
                 if not silent:
-                    print("\t" + message if Err == None else Err)
+                    print("\t" + message if Err is None else Err)
 
 
 def verifyflacfile(filenm, checksum, fp, mfp, ffpnm, loc):
@@ -290,7 +289,7 @@ def verifyflacfile(filenm, checksum, fp, mfp, ffpnm, loc):
         # rawfingerprint = calcflacfingerprint(filepath)
         # if rawfingerprint != fingerprint:
         #    msg = f"{filenm}:{rawfingerprint} does not match {checksum}."
-        checkfile = subprocess.check_output(
+        subprocess.check_output(
             '"' + fp + '"' + ' --test --silent "' + loc + "/" + filenm, encoding="utf8"
         )
         if str(checksum).strip() == fingerprint.strip():
@@ -372,7 +371,7 @@ class md5:
             # logger.error(msg)
         # Attempt to read the first line of the ffp file to determine if it is not encoded using utf-8. If an error occurs, reopen without the encoding parameter.
         try:
-            firstline = md5.readline()
+            md5.readline()
             md5.close()
             md5 = open(md5Name, encoding="utf-8")
         except UnicodeDecodeError:
@@ -709,3 +708,5 @@ def foldercleanup(parentdirectory):
 # pd = r"X:\Downloads\_FTP\gdead.1975.project"
 # rename_child_folders_remove_x_segment(pd)
 # foldercleanup(pd)
+
+

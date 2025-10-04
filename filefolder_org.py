@@ -3,7 +3,6 @@ It contains functions shared between other modules that are used in file managem
 
 import os
 import sys
-import tomllib
 from pathlib import Path
 import csv
 import logging
@@ -12,22 +11,22 @@ import logging
 import shutil
 from typing import List, Union
 
+from services.config import AppConfig, load_app_config
 
-def load_config(config_name):
-    with open(config_name, "rb") as f:
-        # config = toml.load(f)
-        config = tomllib.load(f)
-        return config
+
+def load_config(config_name: str) -> AppConfig:
+    return load_app_config(config_name)
 
 
 config_file = os.path.join(os.path.dirname(__file__), "config.toml")
 config = load_config(config_file)
 
 """
-Path to artist exceptions. This file will map artist names to the artist folder name when there is a variation. 
+Path to artist exceptions. This file will map artist names to the artist folder name when there is a variation.
 Example: Bruce Springsteen & The E Street Band,Bruce Springsteen
 """
-ARTISTEXCEPTIONFILE = config["supportfiles"]["artistexceptions"]
+ARTISTEXCEPTIONFILE = config.supportfiles.get("artistexceptions")
+
 
 
 def remove_empty_file(file_path):
@@ -601,3 +600,5 @@ if __name__ == "__main__":
 
 # folder = r'X:\Downloads\_Zips\Phish'
 # replace_in_folder_names(folder,'phish','ph')
+
+
