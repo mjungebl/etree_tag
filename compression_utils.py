@@ -8,10 +8,9 @@ from pathlib import Path
 import zipfile
 from typing import Iterable
 
-try:
-    import rarfile
-except Exception:  # pragma: no cover - rarfile is optional
-    rarfile = None
+import rarfile
+# except Exception:  # pragma: no cover - rarfile is optional
+#    rarfile = None
 
 
 def _normalize(name: str) -> Path:
@@ -51,7 +50,7 @@ def _root_folder_if_single(names: list[str]) -> str | None:
             # archive (e.g. ``folder/``). When the entry does not end with a
             # path separator it's a file at the archive root, which means
             # there's no single parent folder.
-            if not name.endswith(('/', '\\')):
+            if not name.endswith(("/", "\\")):
                 return None
             candidate = parts[0]
         else:
@@ -64,7 +63,8 @@ def _root_folder_if_single(names: list[str]) -> str | None:
 
 
 def _collect_directory_info(names: Iterable[str]) -> tuple[set[Path], set[Path]]:
-    """Return expected and skipped directories from *names* as they appear in the archive.
+    """Return expected and skipped directories from *names*
+    as they appear in the archive.
 
     Parameters
     ----------
@@ -125,7 +125,9 @@ def _extract_member(reader, member, dest: Path, overwrite: bool) -> None:
         shutil.copyfileobj(src, dst)
 
 
-def extract_archives(directory: str | Path, target: str | Path | None = None, overwrite: bool = False) -> None:
+def extract_archives(
+    directory: str | Path, target: str | Path | None = None, overwrite: bool = False
+) -> None:
     """Unpack all ``.zip`` and ``.rar`` files in ``directory``.
 
     Parameters
@@ -184,9 +186,11 @@ def extract_archives(directory: str | Path, target: str | Path | None = None, ov
                     f"Missing directories after extracting {item.name}: {missing}"
                 )
             if skipped:
-                logging.info(
-                    f"Skipped directories from {item.name}: {sorted(skipped)}"
-                )
+                logging.info(f"Skipped directories from {item.name}: {sorted(skipped)}")
         except Exception as e:  # pragma: no cover - errors logged
             logging.error(f"Failed to extract {item}: {e}")
             print(f"Error extracting {item}: {e}")
+
+
+if __name__ == "__main__":
+    extract_archives(r"X:\Downloads\_Zips\Phishtory")

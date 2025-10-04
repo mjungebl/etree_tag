@@ -1,7 +1,6 @@
 from __future__ import annotations
 from pathlib import Path
 import logging
-from pathlib import Path
 from typing import Iterable, Tuple
 
 from recordingfiles import RecordingFolder
@@ -44,7 +43,9 @@ def check_and_rename(folder: str, db: SQLiteEtreeDB) -> Tuple[str, bool, list[st
     return folder, False, []
 
 
-def validate_folders(folders: Iterable[str], db_path: str = "db/etree_scrape.db") -> list[Tuple[str, bool, list[str]]]:
+def validate_folders(
+    folders: Iterable[str], db_path: str = "db/etree_scrape.db"
+) -> list[Tuple[str, bool, list[str]]]:
     """Validate and rename a sequence of folders.
 
     Parameters
@@ -71,7 +72,9 @@ def validate_folders(folders: Iterable[str], db_path: str = "db/etree_scrape.db"
     return results
 
 
-def validate_parent_folder(parent: str, db_path: str = "db/etree_scrape.db") -> list[Tuple[str, bool, list[str]]]:
+def validate_parent_folder(
+    parent: str, db_path: str = "db/etree_scrape.db"
+) -> list[Tuple[str, bool, list[str]]]:
     """Validate all subfolders of a parent directory.
 
     Parameters
@@ -94,15 +97,23 @@ def validate_parent_folder(parent: str, db_path: str = "db/etree_scrape.db") -> 
 if __name__ == "__main__":
     import argparse
 
-    parent_folder = r"X:\Downloads\_FTP\_Concerts_Unofficial\_renamed2\GD_Originals"
-
-    parser = argparse.ArgumentParser(description="Validate recording folders against the database")
+    # parent_folder = r"X:\Downloads\_FTP\_mismatches_RETRY_RESEARCH"
+    parent_folder = r"X:\Downloads\_FTP\_Concerts_Unofficial\Phish"
+    parser = argparse.ArgumentParser(
+        description="Validate recording folders against the database"
+    )
     parser.add_argument("folders", nargs="*", help="Folder paths to validate")
     if parent_folder:
-        parser.add_argument("--parent", default=parent_folder, help="Parent directory containing show folders")
+        parser.add_argument(
+            "--parent",
+            default=parent_folder,
+            help="Parent directory containing show folders",
+        )
     else:
         parser.add_argument("--parent", help="Parent directory containing show folders")
-    parser.add_argument("--db", default="db/etree_scrape.db", help="Path to SQLite database")
+    parser.add_argument(
+        "--db", default="db/etree_scrape.db", help="Path to SQLite database"
+    )
     args = parser.parse_args()
 
     if args.parent:
@@ -128,4 +139,4 @@ if __name__ == "__main__":
             print(err)
             logging.error(err)
     else:
-        print("all files verified successfully")
+        print("All matched files verified successfully.")

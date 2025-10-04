@@ -73,7 +73,6 @@ query PerformanceFromSource($sourceId: Int!) {
 """
 
 
-
 def find_shnid_by_checksum(checksum: str) -> Dict[str, Any]:
     """
     Fetch artist performances for a given artist and year, filtered by checksum substring.
@@ -86,11 +85,12 @@ def find_shnid_by_checksum(checksum: str) -> Dict[str, Any]:
         "query": CHECKSUM_QUERY,
         "variables": {
             "checksum": checksum,
-        }
+        },
     }
     response = requests.post(GRAPHQL_ENDPOINT, json=payload)
     response.raise_for_status()
     return response.json()
+
 
 def parse_shnid_by_checksum(query_result: dict) -> List[int]:
     """
@@ -109,23 +109,25 @@ def parse_shnid_by_checksum(query_result: dict) -> List[int]:
             shnids.append(shnid)
     return shnids
 
+
 def find_performance_by_shnid(shnid: int) -> Dict[str, Any]:
     """
     Fetch performance and source details for a given SHNID.
     Args:
         shnid (int): The SHNID/source ID to query.
     Returns:
-        dict: The JSON/dict returned by the GraphQL query.   
+        dict: The JSON/dict returned by the GraphQL query.
     """
     payload = {
         "query": SOURCE_PERFORMANCE_QUERY,
         "variables": {
             "sourceId": shnid,
-        }
+        },
     }
     response = requests.post(GRAPHQL_ENDPOINT, json=payload)
     response.raise_for_status()
     return response.json()
+
 
 def parse_performance_by_shnid(query_result: dict):
     """
@@ -145,7 +147,7 @@ def parse_performance_by_shnid(query_result: dict):
     parsed = {
         "source_id": src.get("id"),
         "archive_identifier": src.get("archiveIdentifier"),
-        "circdate": src.get("circdate"), 
+        "circdate": src.get("circdate"),
         "comments": src.get("comments"),
         "createdAt": src.get("createdAt"),
         "updatedAt": src.get("updatedAt"),
@@ -167,10 +169,8 @@ def parse_performance_by_shnid(query_result: dict):
         "set3": perf.get("set3"),
         "artist_id": artist.get("id"),
         "artist_name": artist.get("name"),
-
     }
     return parsed
-
 
 
 def find_checksums_by_shnid(shnid: int) -> Dict[str, Any]:
@@ -181,25 +181,26 @@ def find_checksums_by_shnid(shnid: int) -> Dict[str, Any]:
         "query": SOURCE_CHECKSUMS_QUERY,
         "variables": {
             "sourceId": shnid,
-        }
+        },
     }
     response = requests.post(GRAPHQL_ENDPOINT, json=payload)
     response.raise_for_status()
     return response.json()
 
+
 def parse_checksums_by_shnid(query_result: dict, shnid: int, checksums: dict):
-  for edge in iter_edges(query_result,["data","source","checksums"]):
-      node = edge.get("node", {})
-      checksum_id = node.get("id", None)
-      description = node.get("description", None)
-      createdAt = node.get("createdAt", None)
-      body = node.get("body", None)
-      if checksum_id and body:
-          if shnid in checksums:
-              checksums[shnid][checksum_id] = [description, body, createdAt]
-          else:
-              checksums[shnid] = {checksum_id: [description, body, createdAt]}
-  
+    for edge in iter_edges(query_result, ["data", "source", "checksums"]):
+        node = edge.get("node", {})
+        checksum_id = node.get("id", None)
+        description = node.get("description", None)
+        createdAt = node.get("createdAt", None)
+        body = node.get("body", None)
+        if checksum_id and body:
+            if shnid in checksums:
+                checksums[shnid][checksum_id] = [description, body, createdAt]
+            else:
+                checksums[shnid] = {checksum_id: [description, body, createdAt]}
+
 
 # ARTIST_PERFORMANCES_QUERY = """
 # query ArtistPerformancesByYearAndChecksum(
@@ -259,7 +260,7 @@ def parse_checksums_by_shnid(query_result: dict, shnid: int, checksums: dict):
 #   source(id: $id) {
 #     archiveIdentifier
 #     checksums(filter: $filter, pagination: $pagination) {
-#       totalCount    
+#       totalCount
 #     }
 #     circdate
 #     comments
@@ -308,8 +309,8 @@ def parse_checksums_by_shnid(query_result: dict, shnid: int, checksums: dict):
 #     wavdiskcount
 #   }
 # }
-# """              
-  #return checksums
+# """
+# return checksums
 # def find_performance_by_shnid(id: int) -> Dict[str, Any]:
 #     """
 #     Fetch artist performances for a given artist and year, filtered by checksum substring.
@@ -323,8 +324,6 @@ def parse_checksums_by_shnid(query_result: dict, shnid: int, checksums: dict):
 #     response = requests.post(GRAPHQL_ENDPOINT, json=payload)
 #     response.raise_for_status()
 #     return response.json()
-
-
 
 
 # def fetch_performances(artist_name: str, year: int, checksum: str) -> Dict[str, Any]:
@@ -407,6 +406,7 @@ def parse_checksums_by_shnid(query_result: dict, shnid: int, checksums: dict):
 #                     #sources_list.append(src)
 #     return list(seen)
 
+
 def iter_edges(result: dict, path: list[str]):
     """
     Safely yield edge dicts from a nested GraphQL response.
@@ -424,29 +424,27 @@ def iter_edges(result: dict, path: list[str]):
     for edge in container.get("edges", []):
         yield edge or {}
 
+
 # Example usage:
 if __name__ == "__main__":
+    checksum = "2340b22937822e2aeb1b4ce6a0dc12fc"
+    # checksum = "3528e996afc1b9809019ba5ffd9a150c"
 
-  checksum = "2340b22937822e2aeb1b4ce6a0dc12fc"
-  #checksum = "3528e996afc1b9809019ba5ffd9a150c"
+    shnids = []
+    checksums = {}
+    performances = {}
+    result = find_shnid_by_checksum(checksum)
+    shnids = parse_shnid_by_checksum(result)
 
-  shnids = []
-  checksums = {}  
-  performances = {}
-  result = find_shnid_by_checksum(checksum)
-  shnids = parse_shnid_by_checksum(result)
+    for shnid in shnids:
+        result = find_checksums_by_shnid(shnid)
+        parse_checksums_by_shnid(result, shnid, checksums)
 
-  
-  for shnid in shnids:
-    result = find_checksums_by_shnid(shnid)
-    parse_checksums_by_shnid(result, shnid,checksums)
+    for shnid in checksums.keys():
+        result = find_performance_by_shnid(shnid)
+        performances[shnid] = parse_performance_by_shnid(result)
 
-  for shnid in checksums.keys():
-      result = find_performance_by_shnid(shnid)
-      performances[shnid] = parse_performance_by_shnid(result)
-
-  for shnid in performances.keys():
-      performance = performances[shnid]
-      for key, value in performance.items():
-          print(f"{key}: {value}")
-
+    for shnid in performances.keys():
+        performance = performances[shnid]
+        for key, value in performance.items():
+            print(f"{key}: {value}")

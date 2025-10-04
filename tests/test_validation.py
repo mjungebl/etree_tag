@@ -6,23 +6,26 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 # Stub mutagen.flac used by RecordingFolder
-mutagen = types.ModuleType('mutagen')
-flac_mod = types.ModuleType('mutagen.flac')
+mutagen = types.ModuleType("mutagen")
+flac_mod = types.ModuleType("mutagen.flac")
 flac_mod.FLAC = object
 flac_mod.Picture = object
 mutagen.flac = flac_mod
-sys.modules.setdefault('mutagen', mutagen)
-sys.modules.setdefault('mutagen.flac', flac_mod)
+sys.modules.setdefault("mutagen", mutagen)
+sys.modules.setdefault("mutagen.flac", flac_mod)
 
 import validation
 from validation import check_and_rename, validate_parent_folder
 from recordingfiles import RecordingFolder
 
+
 class DummyDB:
     def __init__(self, *args, **kwargs):
         self.logged = []
+
     def insert_folder_shnid_log(self, shnid, folder_name):
         self.logged.append((shnid, folder_name))
+
     def close(self):
         pass
 
@@ -33,6 +36,7 @@ def test_check_and_rename_no_match(tmp_path, monkeypatch):
 
     def fake_find(self, db=None, debug=False):
         return None
+
     monkeypatch.setattr(RecordingFolder, "_find_matching_recording", fake_find)
 
     db = DummyDB()
@@ -48,10 +52,12 @@ def test_check_and_rename_with_match(tmp_path, monkeypatch):
 
     def fake_find(self, db=None, debug=False):
         return types.SimpleNamespace(id=123, artist_abbrev="gd", date="1975-07-05")
+
     monkeypatch.setattr(RecordingFolder, "_find_matching_recording", fake_find)
 
     def fake_verify(self):
         return [], []
+
     monkeypatch.setattr(RecordingFolder, "verify_fingerprint", fake_verify)
 
     db = DummyDB()
@@ -76,8 +82,10 @@ def test_validate_parent_folder(tmp_path, monkeypatch):
         return types.SimpleNamespace(id=456, artist_abbrev="gd", date="1976-07-05")
 
     monkeypatch.setattr(RecordingFolder, "_find_matching_recording", fake_find)
+
     def fake_verify(self):
         return [], []
+
     monkeypatch.setattr(RecordingFolder, "verify_fingerprint", fake_verify)
     monkeypatch.setattr(validation, "SQLiteEtreeDB", DummyDB)
 

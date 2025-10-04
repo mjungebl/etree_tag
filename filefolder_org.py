@@ -1,33 +1,33 @@
-"""This module is not intended for execution. It contains functions shared between other modules that are used in file management"""
+"""This module is not intended for execution.
+It contains functions shared between other modules that are used in file management."""
+
 import os
 import sys
 import tomllib
 from pathlib import Path
 import csv
 import logging
-#import sys
+
+# import sys
 import shutil
 from typing import List, Union
+
+
 def load_config(config_name):
     with open(config_name, "rb") as f:
-        #config = toml.load(f)
+        # config = toml.load(f)
         config = tomllib.load(f)
         return config
-config_file = os.path.join(os.path.dirname(__file__),"config.toml")
+
+
+config_file = os.path.join(os.path.dirname(__file__), "config.toml")
 config = load_config(config_file)
 
 """
 Path to artist exceptions. This file will map artist names to the artist folder name when there is a variation. 
 Example: Bruce Springsteen & The E Street Band,Bruce Springsteen
 """
-ARTISTEXCEPTIONFILE = config['supportfiles']['artistexceptions']
-
-
-
-
-
-
-
+ARTISTEXCEPTIONFILE = config["supportfiles"]["artistexceptions"]
 
 
 def remove_empty_file(file_path):
@@ -39,59 +39,99 @@ def remove_empty_file(file_path):
     except FileNotFoundError:
         pass  # File doesn't exist, so no need to remove
 
+
 def fix_directory_name(DirectoryName):
     """Clean up the directory name so it is compatible with other code, remove trailing slashes as they'll be concatenated back in"""
-    #DirectoryName = DirectoryName.replace('\\','/')
-    while DirectoryName[-1:] in ['/']:
-        DirectoryName = DirectoryName[:len(DirectoryName)-1]    
+    # DirectoryName = DirectoryName.replace('\\','/')
+    while DirectoryName[-1:] in ["/"]:
+        DirectoryName = DirectoryName[: len(DirectoryName) - 1]
     return Path(DirectoryName).as_posix()
+
 
 def get_child_directories(dirnm):
     """Get a list of subdirectories for the directory specified. Only want a single level here"""
     dirnm = dirnm.strip()
-    directorylist = [f.path.replace('\\','/') for f in os.scandir(dirnm) if f.is_dir()]
+    directorylist = [f.path.replace("\\", "/") for f in os.scandir(dirnm) if f.is_dir()]
     return directorylist
 
-def remove_path_from_dir_name(path,dirnm):
+
+def remove_path_from_dir_name(path, dirnm):
     """Remove the original path from the directory name. used as a step to farse the folder name for an artist"""
-    dirnm = dirnm.replace(path,'')
-    if dirnm[0] == '/':
+    dirnm = dirnm.replace(path, "")
+    if dirnm[0] == "/":
         dirnm = dirnm[1:]
     return dirnm
 
-def get_artist_subfolders(dirnm,folderlst, excpt = {}):
+
+def get_artist_subfolders(dirnm, folderlst, excpt={}):
     """attempt to get the artist name from the folder name. if found, will be used to create a subfolder and move this folder there for easy copying to the music library"""
     directorymap = {}
     for folder in folderlst:
-        reldir = remove_path_from_dir_name(dirnm,folder)
-        if reldir.find(' - ') != -1:
-            #print('Exception keys:',excpt.keys(),'|'+reldir[0:reldir.find(' - ')]+'|')
-            if reldir[0:reldir.find(' - ')] in excpt.keys():
-                reldir = excpt[reldir[0:reldir.find(' - ')]]
+        reldir = remove_path_from_dir_name(dirnm, folder)
+        if reldir.find(" - ") != -1:
+            # print('Exception keys:',excpt.keys(),'|'+reldir[0:reldir.find(' - ')]+'|')
+            if reldir[0 : reldir.find(" - ")] in excpt.keys():
+                reldir = excpt[reldir[0 : reldir.find(" - ")]]
             else:
-                reldir = reldir[0:reldir.find(' - ')]
+                reldir = reldir[0 : reldir.find(" - ")]
         else:
             reldir = None
         directorymap[folder] = reldir
     return directorymap
 
-def get_concert_subfolders(dirnm,folderlst, excpt = {}):
+
+def get_concert_subfolders(dirnm, folderlst, excpt={}):
     """for live recordings move the folders in the respective year subfolders"""
-    #To Do: make this more robust for multipl artists
+    # To Do: make this more robust for multipl artists
     directorymap = {}
     for folder in folderlst:
-        reldir = remove_path_from_dir_name(dirnm,folder)
-        if reldir.startswith(('gd','ph','jg')) and reldir[2:6].isdigit() and len(reldir) > 6:
+        reldir = remove_path_from_dir_name(dirnm, folder)
+        if (
+            reldir.startswith(("gd", "ph", "jg"))
+            and reldir[2:6].isdigit()
+            and len(reldir) > 6
+        ):
             reldir = f"{dirnm}/{reldir[0:6].lower()}"
-            #print('Exception keys:',excpt.keys(),'|'+reldir[0:reldir.find(' - ')]+'|')
-            #if reldir[0:reldir.find(' - ')] in excpt.keys():
+            # print('Exception keys:',excpt.keys(),'|'+reldir[0:reldir.find(' - ')]+'|')
+            # if reldir[0:reldir.find(' - ')] in excpt.keys():
             #    reldir = excpt[reldir[0:reldir.find(' - ')]]
-            #else:
+            # else:
             #    reldir = reldir[0:reldir.find(' - ')]
         else:
             reldir = None
         directorymap[folder] = reldir
     return directorymap
+
+
+def move_concerts_to_year_subfolders(directoryname, exceptions={}):
+    directoryname = fix_directory_name(directoryname)
+    listsubfolders = get_child_directories(directoryname)
+    for subdir in listsubfolders:
+        # if subdir.lower().startswith('gd'):
+        print(f"{subdir =}")
+    foldermap = get_concert_subfolders(directoryname, listsubfolders)
+    print(f"{foldermap = }")
+    concertfolders = list(set(foldermap.values()))
+    for concertfolder in concertfolders:
+        if concertfolder:
+            if not os.path.exists(concertfolder):
+                os.makedirs(concertfolder)
+    for source, destination in foldermap.items():
+        if destination is not None:
+            if os.path.exists(destination) and os.path.exists(source):
+                if not os.path.exists(
+                    os.path.join(
+                        os.path.abspath(destination),
+                        remove_path_from_dir_name(directoryname, source),
+                    )
+                ):
+                    origpath = os.path.abspath(source)
+                    newpath = os.path.join(
+                        os.path.abspath(destination),
+                        remove_path_from_dir_name(directoryname, source),
+                    )
+                    shutil.move(origpath, newpath)
+
 
 def load_artist_exceptions(filenm):
     """Load the artist exceptions file. Used when an artist should be mapped to a different subfolder"""
@@ -99,16 +139,16 @@ def load_artist_exceptions(filenm):
     with open(filenm) as f:
         reader = csv.reader(f, skipinitialspace=True)
         for row in reader:
-            #Ensure there are at least two fields
+            # Ensure there are at least two fields
             if len(row) >= 2:
                 key, val = row[0], row[1]
                 exceptions[key] = val
-                #print(f"Key: {key}, Value: {val}")
+                # print(f"Key: {key}, Value: {val}")
             else:
-                print(f"Skipping invalid row: {row}")        
+                print(f"Skipping invalid row: {row}")
         reader = csv.reader(f, skipinitialspace=True)
     return exceptions
- 
+
 
 def replace_in_file_names(directory, find_str, replace_str):
     """
@@ -121,7 +161,7 @@ def replace_in_file_names(directory, find_str, replace_str):
     """
 
     for root, dirs, filenames in os.walk(directory):
-        #print(filename)
+        # print(filename)
         for filename in filenames:
             if find_str in filename:
                 new_filename = filename.replace(find_str, replace_str)
@@ -130,7 +170,8 @@ def replace_in_file_names(directory, find_str, replace_str):
                 os.rename(old_path, new_path)
                 print(f"Renamed: {filename} -> {new_filename}")
 
-def replace_in_folder_names(directory:str, find_str:str, replace_str:str):
+
+def replace_in_folder_names(directory: str, find_str: str, replace_str: str):
     """
     Renames folders in a directory by replacing a string in the folder.
 
@@ -138,7 +179,7 @@ def replace_in_folder_names(directory:str, find_str:str, replace_str:str):
         directory: The directory containing the folders to rename.
         find_str: The string to find in the filenames.
         replace_str: The string to replace the find_str with.
-    """    
+    """
     for root, dirs, filenames in os.walk(directory):
         for dir in dirs:
             if find_str in dir:
@@ -150,8 +191,9 @@ def replace_in_folder_names(directory:str, find_str:str, replace_str:str):
                     os.rename(old_path, new_path)
                     print(f"Renamed: {dir} -> {new_dir}")
                 except Exception as e:
-                    print(f'Error renaming {dir}: {e}')          
-            #print(f'{root=} {dir=}')
+                    print(f"Error renaming {dir}: {e}")
+            # print(f'{root=} {dir=}')
+
 
 def reset_logger():
     """Stop logging to any old file and start logging to new_log_file."""
@@ -161,7 +203,6 @@ def reset_logger():
     # 2) Remove all handlers associated with the root logger
     for handler in logging.root.handlers[:]:
         logging.root.removeHandler(handler)
-
 
 
 def flatten_immediate_subdirectories():
@@ -182,7 +223,6 @@ def flatten_immediate_subdirectories():
 
     # 2. Scan immediate children of dir_path
     for entry in os.scandir(dir_path):
-        
         if entry.is_dir():
             subdir_path = entry.path
 
@@ -205,7 +245,7 @@ def flatten_immediate_subdirectories():
                     else:
                         print(f"Moving {old_item} -> {new_item}")
                         shutil.move(old_item, new_item)
-                    #else:
+                    # else:
                     #    print(f"Skipping move: {old_item} no longer exists.")
 
                 # After attempting to move everything, check if subdir is empty
@@ -214,34 +254,36 @@ def flatten_immediate_subdirectories():
                     os.rmdir(subdir_path)
                 else:
                     print(f"Subdirectory not empty, skipping removal: {subdir_path}")
-       
+
     if not os.listdir(dir_path):
-         print(f"Removing empty directory: {dir_path}")
-        #os.rmdir(subdir_path)
+        print(f"Removing empty directory: {dir_path}")
+    # os.rmdir(subdir_path)
     else:
         print(f"Subdirectory not empty, skipping removal: {subdir_path}")
+
 
 def get_files_by_extension(folder, ext):
     """
     Returns a list of filenames in the specified folder that have the given extension.
-    
+
     Parameters:
         folder (str): The directory in which to search for files.
         ext (str): The file extension to filter by (e.g., "flac" or ".flac").
-    
+
     Returns:
         list: A list of filenames (not full paths) that end with the specified extension.
     """
     # Ensure the extension starts with a dot
-    if not ext.startswith('.'):
-        ext = '.' + ext
+    if not ext.startswith("."):
+        ext = "." + ext
 
     # Get all entries in the folder and filter by file type and extension
     filenames = [
-        f for f in os.listdir(folder)
+        f
+        for f in os.listdir(folder)
         if os.path.isfile(os.path.join(folder, f)) and f.lower().endswith(ext.lower())
     ]
-    
+
     return filenames
 
 
@@ -254,13 +296,13 @@ def copy_files_by_extension_recursive(source_folder, target_folder, extension):
         source_folder (str): The root directory to search for files.
         target_folder (str): The destination root directory where files will be copied.
         extension (str): The file extension to filter by (e.g., "txt" or ".txt").
-    
+
     Example:
         copy_files_by_extension_recursive("data", "backup", "txt")
     """
     # Ensure the extension starts with a dot
-    if not extension.startswith('.'):
-        extension = '.' + extension
+    if not extension.startswith("."):
+        extension = "." + extension
 
     for dirpath, dirnames, filenames in os.walk(source_folder):
         for filename in filenames:
@@ -281,10 +323,10 @@ def copy_files_by_extension_recursive(source_folder, target_folder, extension):
 def get_file_extensions(folder):
     """
     Recursively retrieves a sorted list of unique file extensions found in the given folder.
-    
+
     Parameters:
         folder (str): The root directory to search.
-    
+
     Returns:
         list: A sorted list of unique file extensions (in lowercase, including the dot).
               Files without an extension are represented as an empty string.
@@ -297,15 +339,16 @@ def get_file_extensions(folder):
             extensions.add(ext)
     return sorted(extensions)
 
+
 def read_nonempty_lines(file_path):
     """
     Reads a text file and returns a list of all non-empty lines.
-    
+
     A line is considered non-empty if it contains any non-whitespace characters.
-    
+
     Args:
         file_path (str): The path to the text file.
-    
+
     Returns:
         list: A list of non-empty lines (with trailing newline characters removed).
     """
@@ -319,11 +362,11 @@ def read_nonempty_lines(file_path):
 
 def find_zero_length_flacs(root_dir: str) -> List[Path]:
     """
-    Traverse the directory tree rooted at `root_dir` and return a list of 
+    Traverse the directory tree rooted at `root_dir` and return a list of
     Path objects pointing to any .flac files of size 0 bytes.
 
     Parameters:
-        root_dir (str): Path to the top‐level folder to scan 
+        root_dir (str): Path to the top‐level folder to scan
                         (e.g., r"X:\Music\Kitchen\4TB").
 
     Returns:
@@ -334,7 +377,7 @@ def find_zero_length_flacs(root_dir: str) -> List[Path]:
 
     # Recursively search for “*.flac” anywhere under root
     for flac_path in root.rglob("*.flac"):
-        #print(f"Checking: {flac_path}")
+        # print(f"Checking: {flac_path}")
         try:
             if flac_path.stat().st_size == 0:
                 zero_length_files.append(flac_path)
@@ -343,7 +386,6 @@ def find_zero_length_flacs(root_dir: str) -> List[Path]:
             continue
 
     return zero_length_files
-
 
 
 def sort_file_lines(file_path: Path) -> Path:
@@ -405,12 +447,11 @@ def remove_trailing_chars_from_folder(path: str, n: int) -> str:
     os.rename(path, new_path)
     return new_path
 
+
 def find_folders_ending_with(base_dir: str, suffix: str = "-001"):
     base = Path(base_dir)
-    return [
-        p for p in base.iterdir()
-        if p.is_dir() and p.name.endswith(suffix)
-    ]
+    return [p for p in base.iterdir() if p.is_dir() and p.name.endswith(suffix)]
+
 
 def is_directory_empty(path: Union[str, Path]) -> bool:
     """
@@ -459,7 +500,7 @@ def list_directories_recursive_pathlib(base_dir: str) -> List[Path]:
         raise NotADirectoryError(f"Not a directory: {base}")
 
     # rglob('*') finds all files & dirs; filter to dirs only
-    return [p for p in base.rglob('*') if p.is_dir()]
+    return [p for p in base.rglob("*") if p.is_dir()]
 
 
 def delete_directory_if_empty(path: Union[str, Path]) -> bool:
@@ -492,7 +533,8 @@ def delete_directory_if_empty(path: Union[str, Path]) -> bool:
 
 
 def main():
-    print('Not gonna do it!')
+    print("Not gonna do it!")
+
 
 # --------------------------
 # Example usage:
@@ -502,10 +544,14 @@ def main():
 
 if __name__ == "__main__":
     main()
+    # concert_folder = r'X:\Downloads\_FTP\_Concerts_Unofficial\_renamed2\GD_Originals'
+    concert_folder = r"X:\Downloads\_FTP\_Concerts_Unofficial\_renamed2\Phish"
+    move_concerts_to_year_subfolders(concert_folder)
+
     # zero_length_files = find_zero_length_flacs(r"X:\Music\Kitchen\4TB")
     # print(zero_length_files)
     # folder = r'X:\Downloads\_Extract\_Batch\Phish'
-    # replace_in_folder_names(folder,'.CA.',',.CA.')    
+    # replace_in_folder_names(folder,'.CA.',',.CA.')
     # replace_in_folder_names(folder,'.',' ')
     # replace_in_folder_names(folder,'FLAC16-WEEKaPAuG','')
     # replace_in_folder_names(folder,' FLAC24-WEEKaPAuG',' [24-48]')
@@ -521,21 +567,23 @@ if __name__ == "__main__":
     # replace_in_folder_names(folder,' FLAC','')
     # replace_in_folder_names(folder,' [HDCD]','')
     # replace_in_folder_names(folder,'[HDCD]','')
-    #[HDCD]
-    #folder = r'X:\Downloads\_Extract\_Batch\Trey Anastasio'
-    folder = r'X:\Downloads\_Extract\_Batch\Phish'
-    replace_in_folder_names(folder,'.',' ')
-    replace_in_folder_names(folder,'FLAC16-WEEKaPAuG','')
-    replace_in_folder_names(folder,'Phish-','Phish - ')
-    #Phish-
-    #replace_in_folder_names(folder,'Trey Anastasio-','Trey Anastasio - ')
+    # [HDCD]
+
+    # folder = r'X:\Downloads\_Extract\_Batch\Trey Anastasio'
+    # folder = r'X:\Downloads\_Extract\_Batch\Phish'
+    # replace_in_folder_names(folder,'.',' ')
+    # replace_in_folder_names(folder,'FLAC16-WEEKaPAuG','')
+    # replace_in_folder_names(folder,'Phish-','Phish - ')
+
+    # Phish-
+    # replace_in_folder_names(folder,'Trey Anastasio-','Trey Anastasio - ')
     # folder = r'X:\Downloads\_Extract\_Batch\Leftover Salmon'
     # replace_in_folder_names(folder,' [FLAC16]','')
     # replace_in_folder_names(folder,'Leftover Salmon ','Leftover Salmon - ')
-    #replace_in_file_names(r"V:\String Cheese Incident\String Cheese Incident - 2022-07-17 - Red Rocks Amphitheatre, Morrison, CO",' - 2022-07-17 - Red Rocks Ampitheatre, Morrison, CO - The String Cheese Incident - The String Cheese Incident','')
-    #sort_file_lines(Path('zero_fingerprint_flacs_12TB.txt'))
-    #replace_in_file_names(r"X:\Downloads\_Mega\Grateful Dead\Grateful Dead - Enjoying the Ride (2025)","( ","(")
-    
+    # replace_in_file_names(r"V:\String Cheese Incident\String Cheese Incident - 2022-07-17 - Red Rocks Amphitheatre, Morrison, CO",' - 2022-07-17 - Red Rocks Ampitheatre, Morrison, CO - The String Cheese Incident - The String Cheese Incident','')
+    # sort_file_lines(Path('zero_fingerprint_flacs_12TB.txt'))
+    # replace_in_file_names(r"X:\Downloads\_Mega\Grateful Dead\Grateful Dead - Enjoying the Ride (2025)","( ","(")
+
     # renames = find_folders_ending_with(r"X:\Downloads\_Zips\Phish","-002")
     # print(renames)
     # trim_n = len("-20250509T030621Z-1-001")
@@ -544,12 +592,12 @@ if __name__ == "__main__":
     #     print(f"Renamed {name} to {new_name}")
 
 # CLEAN UP EMPTY DIRECTORIES UNDER A PARENT FOLDER
-    # dirs = list_directories_recursive_pathlib(r"X:\Downloads\_Zips\Phish")
-    # for x in dirs:
-    #     empty = is_directory_empty(x)
-    #     if empty:
-    #         print(f"Empty directory: {x}")
-    #         delete_directory_if_empty(x)
+# dirs = list_directories_recursive_pathlib(r"X:\Downloads\_Zips\Phish")
+# for x in dirs:
+#     empty = is_directory_empty(x)
+#     if empty:
+#         print(f"Empty directory: {x}")
+#         delete_directory_if_empty(x)
 
-    # folder = r'X:\Downloads\_Zips\Phish'
-    # replace_in_folder_names(folder,'phish','ph')
+# folder = r'X:\Downloads\_Zips\Phish'
+# replace_in_folder_names(folder,'phish','ph')

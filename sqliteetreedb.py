@@ -9,6 +9,7 @@ import lcdb_graphql as lcdb
 import re
 from losslessfiles import parse_st5, parse_flac_fingerprint, parse_md5
 
+
 class SQLiteEtreeDB:
     def __init__(self, db_path="db/etree_tag_db.db", log_level=logging.ERROR):
         """Initialize database connection and set up logging."""
@@ -18,10 +19,11 @@ class SQLiteEtreeDB:
         self.initialize_eventdb()
         self.translations = self.build_title_transformations_dict()
         # Set up logging
-        logging.basicConfig(level=log_level, format="%(asctime)s - %(levelname)s - %(message)s")
-        
+        logging.basicConfig(
+            level=log_level, format="%(asctime)s - %(levelname)s - %(message)s"
+        )
+
         # Initialize tables
-        
 
     def initialize_eventdb(self):
         """Creates necessary tables if they do not exist."""
@@ -37,22 +39,35 @@ class SQLiteEtreeDB:
                     PRIMARY KEY (shnid, md5key, base_filename,file_extension)
                 )
             """)
-            self.cursor.execute('SELECT COUNT(*) FROM signatures;')
+            self.cursor.execute("SELECT COUNT(*) FROM signatures;")
             count = self.cursor.fetchone()[0]
             if count == 0:
-                with open('db/csv/signatures.csv', 'r', newline='', encoding="utf-8") as csvfile:
+                with open(
+                    "db/csv/signatures.csv", "r", newline="", encoding="utf-8"
+                ) as csvfile:
                     reader = csv.DictReader(csvfile)  # Uses the first row as headers
                     rows = []
                     for row in reader:
                         # Adjust the keys if necessary to match your table's columns
-                        rows.append((row['shnid'], row['md5key'], row['base_filename'], row['file_extension'], row['audio_checksum']))
-                    self.cursor.executemany('INSERT INTO signatures (shnid,md5key,base_filename,file_extension,audio_checksum) VALUES (?, ?, ?, ?, ?)', rows)
-                        #self.conn.commit()
+                        rows.append(
+                            (
+                                row["shnid"],
+                                row["md5key"],
+                                row["base_filename"],
+                                row["file_extension"],
+                                row["audio_checksum"],
+                            )
+                        )
+                    self.cursor.executemany(
+                        "INSERT INTO signatures (shnid,md5key,base_filename,file_extension,audio_checksum) VALUES (?, ?, ?, ?, ?)",
+                        rows,
+                    )
+                    # self.conn.commit()
 
             self.cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_audio_checksum ON signatures(audio_checksum)
             """)
-                          
+
             self.cursor.execute("""
                 CREATE TABLE IF NOT EXISTS shnlist (
                     shnid INTEGER PRIMARY KEY,
@@ -66,17 +81,34 @@ class SQLiteEtreeDB:
                     City TEXT
                 )
             """)
-            self.cursor.execute('SELECT COUNT(*) FROM shnlist;')
+            self.cursor.execute("SELECT COUNT(*) FROM shnlist;")
             count = self.cursor.fetchone()[0]
             if count == 0:
-                with open('db/csv/shnlist.csv', 'r', newline='', encoding="utf-8") as csvfile:
+                with open(
+                    "db/csv/shnlist.csv", "r", newline="", encoding="utf-8"
+                ) as csvfile:
                     reader = csv.DictReader(csvfile)  # Uses the first row as headers
                     rows = []
                     for row in reader:
                         # Adjust the keys if necessary to match your table's columns
-                        rows.append((row['shnid'], row['Date'], row['VenueSource'], row['CircDateAddedSource'], row['ChecksumsSource'], row['Source'], row['artist_id'], row['Venue'], row['City']))
-                    self.cursor.executemany('INSERT INTO shnlist (shnid,Date,VenueSource,CircDateAddedSource,ChecksumsSource,Source,artist_id,Venue,City) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', rows)
-                        #self.conn.commit()
+                        rows.append(
+                            (
+                                row["shnid"],
+                                row["Date"],
+                                row["VenueSource"],
+                                row["CircDateAddedSource"],
+                                row["ChecksumsSource"],
+                                row["Source"],
+                                row["artist_id"],
+                                row["Venue"],
+                                row["City"],
+                            )
+                        )
+                    self.cursor.executemany(
+                        "INSERT INTO shnlist (shnid,Date,VenueSource,CircDateAddedSource,ChecksumsSource,Source,artist_id,Venue,City) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        rows,
+                    )
+                    # self.conn.commit()
 
             self.cursor.execute("""
                 CREATE TABLE IF NOT EXISTS title_transformations (
@@ -86,17 +118,25 @@ class SQLiteEtreeDB:
                 )
             """)
 
-            self.cursor.execute('SELECT COUNT(*) FROM title_transformations;')
-            count = self.cursor.fetchone()[0]            
+            self.cursor.execute("SELECT COUNT(*) FROM title_transformations;")
+            count = self.cursor.fetchone()[0]
             if count == 0:
-                with open('db/csv/title_transformations.csv', 'r', newline='', encoding="utf-8") as csvfile:
+                with open(
+                    "db/csv/title_transformations.csv",
+                    "r",
+                    newline="",
+                    encoding="utf-8",
+                ) as csvfile:
                     reader = csv.DictReader(csvfile)  # Uses the first row as headers
                     rows = []
                     for row in reader:
                         # Adjust the keys if necessary to match your table's columns
-                        rows.append((row['title'], row['title_clean'], row['gazinta']))
-                    self.cursor.executemany('INSERT INTO title_transformations (title,title_clean,gazinta) VALUES (?, ?, ?)', rows)
-                        #self.conn.commit()
+                        rows.append((row["title"], row["title_clean"], row["gazinta"]))
+                    self.cursor.executemany(
+                        "INSERT INTO title_transformations (title,title_clean,gazinta) VALUES (?, ?, ?)",
+                        rows,
+                    )
+                    # self.conn.commit()
 
             self.cursor.execute("""
                 CREATE TABLE IF NOT EXISTS artists (
@@ -114,22 +154,20 @@ class SQLiteEtreeDB:
 
             # Insert predefined artists, no need for a csv yet
             artists_data = [
-                (2, 'Grateful Dead', 'gd'),
-                (4, 'Phish', 'ph'),
-                (12, 'Garcia', 'jg'),
-                (39,'Phil Lesh & Friends','phil'),
-                (85,'Trey Anastasio','trey'),
-                (847, 'Grateful Dead Compilations', 'gd'),
-                (28494, 'Grateful Dead Interviews', 'gd'),
-                (8515, 'Pigpen', 'pigpen'),
-                (40644, 'Furthur', 'furthur')
-                
+                (2, "Grateful Dead", "gd"),
+                (4, "Phish", "ph"),
+                (12, "Garcia", "jg"),
+                (39, "Phil Lesh & Friends", "phil"),
+                (85, "Trey Anastasio", "trey"),
+                (847, "Grateful Dead Compilations", "gd"),
+                (28494, "Grateful Dead Interviews", "gd"),
+                (8515, "Pigpen", "pigpen"),
+                (40644, "Furthur", "furthur"),
             ]
             self.cursor.executemany(
                 "INSERT OR REPLACE INTO artists (artistid, ArtistName, ArtistAbbrev) VALUES (?, ?, ?);",
                 artists_data,
             )
-
 
             self.cursor.execute("""
                 CREATE TABLE IF NOT EXISTS track_metadata (
@@ -148,24 +186,48 @@ class SQLiteEtreeDB:
                     md5key INTEGER
                 )
             """)
-            self.cursor.execute('SELECT COUNT(*) FROM track_metadata;')
+            self.cursor.execute("SELECT COUNT(*) FROM track_metadata;")
             count = self.cursor.fetchone()[0]
             if count == 0:
-                with open('db/csv/track_metadata.csv', 'r', newline='', encoding="utf-8") as csvfile:
+                with open(
+                    "db/csv/track_metadata.csv", "r", newline="", encoding="utf-8"
+                ) as csvfile:
                     reader = csv.DictReader(csvfile)  # Uses the first row as headers
                     rows = []
                     for row in reader:
                         # Adjust the keys if necessary to match your table's columns
-                        rows.append((row['shnid'], row['disc_number'], row['track_number'], row['title'], row['fingerprint'], row['bit_depth'], row['frequency'], row['length'], row['channels'], row['filename'], row['title_clean'], row['gazinta'], row['md5key']))
-                    self.cursor.executemany('INSERT INTO track_metadata (shnid,disc_number,track_number,title,fingerprint,bit_depth,frequency,length,channels,filename,title_clean,gazinta,md5key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', rows)
-                        #self.conn.commit()
+                        rows.append(
+                            (
+                                row["shnid"],
+                                row["disc_number"],
+                                row["track_number"],
+                                row["title"],
+                                row["fingerprint"],
+                                row["bit_depth"],
+                                row["frequency"],
+                                row["length"],
+                                row["channels"],
+                                row["filename"],
+                                row["title_clean"],
+                                row["gazinta"],
+                                row["md5key"],
+                            )
+                        )
+                    self.cursor.executemany(
+                        "INSERT INTO track_metadata (shnid,disc_number,track_number,title,fingerprint,bit_depth,frequency,length,channels,filename,title_clean,gazinta,md5key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        rows,
+                    )
+                    # self.conn.commit()
 
             # Create an index on shnid if it doesn't exist.
-            self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_shnid ON track_metadata (shnid)")
-            
+            self.cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_shnid ON track_metadata (shnid)"
+            )
+
             # Create an index on fingerprint if it doesn't exist.
-            self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_fingerprint ON track_metadata (fingerprint)")
-            
+            self.cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_fingerprint ON track_metadata (fingerprint)"
+            )
 
             self.cursor.execute("""
                 CREATE TABLE IF NOT EXISTS checksum_files (
@@ -176,22 +238,31 @@ class SQLiteEtreeDB:
                 )
             """)
 
-            self.cursor.execute('SELECT COUNT(*) FROM checksum_files;')
+            self.cursor.execute("SELECT COUNT(*) FROM checksum_files;")
             count = self.cursor.fetchone()[0]
             if count == 0:
-                with open('db/csv/checksum_files.csv', 'r', newline='', encoding="utf-8") as csvfile:
+                with open(
+                    "db/csv/checksum_files.csv", "r", newline="", encoding="utf-8"
+                ) as csvfile:
                     reader = csv.DictReader(csvfile)  # Uses the first row as headers
                     rows = []
                     for row in reader:
                         # Adjust the keys if necessary to match your table's columns
-                        rows.append((row['md5key'], row['shnid'], row['label'], row['filename']))
-                    self.cursor.executemany('INSERT INTO checksum_files (md5key,shnid,label,filename) VALUES (?, ?, ?, ?)', rows)
-                        #self.conn.commit()
+                        rows.append(
+                            (row["md5key"], row["shnid"], row["label"], row["filename"])
+                        )
+                    self.cursor.executemany(
+                        "INSERT INTO checksum_files (md5key,shnid,label,filename) VALUES (?, ?, ?, ?)",
+                        rows,
+                    )
+                    # self.conn.commit()
 
             # Create an index on shnid for faster lookups.
-            self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_checksum_files_shnid ON checksum_files (shnid)")         
-            
-            #no need to insert data here. This is used as a log for importing. 
+            self.cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_checksum_files_shnid ON checksum_files (shnid)"
+            )
+
+            # no need to insert data here. This is used as a log for importing.
             self.cursor.execute("""
                 CREATE TABLE IF NOT EXISTS folder_shnid_log (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -199,33 +270,38 @@ class SQLiteEtreeDB:
                     folder_name TEXT,
                     check_date TEXT  -- We'll store the timestamp here in ISO8601 format
                 )
-            """)            
+            """)
             self.conn.commit()
 
         except sqlite3.Error as e:
             logging.error(f"SQLite error during initialization: {e}")
 
-    def insert_folder_shnid_log(self, shnid,folder_name):
+    def insert_folder_shnid_log(self, shnid, folder_name):
         """
         Inserts a single record into the folder_shnid_log table.
-        
+
         Before inserting, any existing record with the same md5key is deleted (full replace).
-        
+
         Args:
             record (tuple): A tuple in the form (md5key, shnid, label, filename)
                             where md5key and shnid are integers, and label and filename are text.
         """
         now = datetime.datetime.now()
-        timestamp = now.isoformat(sep=' ', timespec='seconds')  
+        timestamp = now.isoformat(sep=" ", timespec="seconds")
         try:
             # Insert the new record.
-            self.cursor.execute ("""
+            self.cursor.execute(
+                """
                 INSERT INTO folder_shnid_log (shnid, folder_name, check_date)
                 VALUES (?, ?, ?)
-            """, (shnid,folder_name, timestamp))
+            """,
+                (shnid, folder_name, timestamp),
+            )
             self.conn.commit()
         except Exception as e:
-            logging.error(f"Error inserting folder_shnid_log record {shnid, folder_name,timestamp}: {e}")
+            logging.error(
+                f"Error inserting folder_shnid_log record {shnid, folder_name, timestamp}: {e}"
+            )
             self.conn.rollback()
 
     def store_signatures(self, records):
@@ -233,11 +309,14 @@ class SQLiteEtreeDB:
         try:
             md5key = records[0][1]
             self.cursor.execute("DELETE FROM signatures WHERE md5key = ?", (md5key,))
-            self.cursor.executemany("""
+            self.cursor.executemany(
+                """
                 INSERT INTO signatures 
                 (shnid, md5key, base_filename, file_extension, audio_checksum)
                 VALUES (?, ?, ?, ?, ?)
-            """, records)
+            """,
+                records,
+            )
             self.conn.commit()
 
         except sqlite3.Error as e:
@@ -252,19 +331,20 @@ class SQLiteEtreeDB:
                 venuesource = row[1]
                 if venuesource:
                     # Split the VenueSource by commas and remove extra whitespace
-                    parts = [part.strip() for part in venuesource.split(',')]
+                    parts = [part.strip() for part in venuesource.split(",")]
                     if len(parts) >= 2:
                         # Last two elements are considered as City
-                        city = ', '.join(parts[-2:])
+                        city = ", ".join(parts[-2:])
                         # Everything before the last two elements is considered as Venue
-                        venue = ', '.join(parts[:-2])
+                        venue = ", ".join(parts[:-2])
                     else:
                         # If there's less than 2 parts, use the entire string as Venue
                         venue = venuesource
                         city = ""
                 row.append(venue)
-                row.append(city)                 
-                self.cursor.execute("""
+                row.append(city)
+                self.cursor.execute(
+                    """
                     INSERT INTO shnlist (Date, VenueSource, CircDateAddedSource, ChecksumsSource, Source, shnid,artist_id,Venue,City)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(shnid) DO UPDATE SET
@@ -276,21 +356,24 @@ class SQLiteEtreeDB:
                         artist_id=excluded.artist_id,
                         Venue=excluded.Venue,
                         City=excluded.City
-                """, row)
+                """,
+                    row,
+                )
                 if shnid:
                     logging.info(f"Added Shnid: {shnid} to database")
                 else:
-                    logging.error(f"No shnid found in records")                
+                    logging.error("No shnid found in records")
             self.conn.commit()
 
         except sqlite3.Error as e:
             logging.error(f"SQLite error in store_artist_events: {e}")
 
-
     def get_shnid_info(self, shnid):
         """Retrieves a formatted string containing event info based on shnid."""
         try:
-            self.cursor.execute("SELECT Date, VenueSource FROM shnlist WHERE shnid = ?", (shnid,))
+            self.cursor.execute(
+                "SELECT Date, VenueSource FROM shnlist WHERE shnid = ?", (shnid,)
+            )
             row = self.cursor.fetchone()
             return f"{row[0]} {row[1]} ({shnid})" if row else None
 
@@ -311,16 +394,19 @@ class SQLiteEtreeDB:
 
     def get_shnid_details(self, shnid):
         """
-            Returns a tuple containing (Date,VenueSource,Source,artist_id,Venue, City) for a given shnid
+        Returns a tuple containing (Date,VenueSource,Source,artist_id,Venue, City) for a given shnid
         """
         try:
-            self.cursor.execute("SELECT Date,VenueSource,Source,artist_id,Venue, City FROM shnlist WHERE shnid = ?", (shnid,))
+            self.cursor.execute(
+                "SELECT Date,VenueSource,Source,artist_id,Venue, City FROM shnlist WHERE shnid = ?",
+                (shnid,),
+            )
             row = self.cursor.fetchone()
             return row if row else None
 
         except sqlite3.Error as e:
             logging.error(f"SQLite error in get_source_by_shnid: {e}")
-            return None        
+            return None
 
     def get_signatures_by_md5key(self, md5key):
         """Retrieves all records from the 'signatures' table for the given shnid."""
@@ -335,7 +421,9 @@ class SQLiteEtreeDB:
     def get_checksums_only_by_md5key(self, md5key):
         """Retrieves all records from the 'signatures' table for the given shnid."""
         try:
-            self.cursor.execute("SELECT audio_checksum FROM signatures WHERE md5key = ?", (md5key,))
+            self.cursor.execute(
+                "SELECT audio_checksum FROM signatures WHERE md5key = ?", (md5key,)
+            )
             return [x[0] for x in self.cursor.fetchall()]
 
         except sqlite3.Error as e:
@@ -345,9 +433,12 @@ class SQLiteEtreeDB:
     def get_ffp_record_by_checksum(self, checksum):
         """Retrieves a record from 'signatures' table where file type is 'ffp' and checksum matches."""
         try:
-            self.cursor.execute("""
+            self.cursor.execute(
+                """
                 SELECT * FROM signatures WHERE audio_checksum = ? LIMIT 1
-            """, (checksum,))
+            """,
+                (checksum,),
+            )
             return self.cursor.fetchone()
 
         except sqlite3.Error as e:
@@ -362,9 +453,12 @@ class SQLiteEtreeDB:
             list: A list of tuples [(shnid, md5key),].
         """
         try:
-            self.cursor.execute("""
+            self.cursor.execute(
+                """
                 SELECT shnid,md5key FROM signatures WHERE audio_checksum = ?
-            """, (checksum,))
+            """,
+                (checksum,),
+            )
             return self.cursor.fetchall()
 
         except sqlite3.Error as e:
@@ -402,7 +496,7 @@ class SQLiteEtreeDB:
             logging.error(f"SQLite error in get_artists_dict: {e}")
             return {}
 
-    def get_artist_name(self,artist_id):
+    def get_artist_name(self, artist_id):
         """
         Retrieves all records from the 'artists' table and returns them as a dictionary,
         where the key is the ArtistName and the value is the artistid.
@@ -411,7 +505,9 @@ class SQLiteEtreeDB:
             dict: A dictionary mapping ArtistName to artistid.
         """
         try:
-            self.cursor.execute("""SELECT ArtistName FROM artists where artistid = ?;""",(artist_id,))
+            self.cursor.execute(
+                """SELECT ArtistName FROM artists where artistid = ?;""", (artist_id,)
+            )
             artistname = self.cursor.fetchone()
             return artistname[0] if artistname else None
         except sqlite3.Error as e:
@@ -431,11 +527,10 @@ class SQLiteEtreeDB:
             logging.error(f"SQLite error in get_artist_abbrev: {e}")
             return None
 
-
-    def clean_title_field(self,title):
+    def clean_title_field(self, title):
         """
         Clean the title string and derive the title_clean and gazinta fields.
-        
+
         The cleaning logic follows these steps:
         1. Remove all carriage returns (\r) and linefeeds (\n) from the title.
         2. Trim whitespace from both ends.
@@ -447,40 +542,40 @@ class SQLiteEtreeDB:
         5. If the cleaned title starts with '/' but not with '//', then prepend an extra '/' (i.e. replace the first character with '//').
         6. Trim whitespace again.
         7. If the cleaned title starts with 'E: ' (i.e. the first 3 characters are "E: " in SQL, so in Python title[0:3]=="E: "), remove them and left‐trim the result.
-        
+
         Returns a tuple (title_clean, gazinta). If title is None, both are returned as None.
         """
         if title is None:
             return None, None
 
-        cleaned, gazinta = self.translations.get(title,(None,None))
+        cleaned, gazinta = self.translations.get(title, (None, None))
         if cleaned:
             return cleaned, gazinta
         # Remove carriage returns and linefeeds, then trim whitespace.
-        cleaned = title.replace('\r', '').replace('\n', '').strip()
+        cleaned = title.replace("\r", "").replace("\n", "").strip()
         gazinta = None
 
         # Check ending tokens and remove them, setting gazinta to 'T' when appropriate.
-        if cleaned.endswith(' ->'):
+        if cleaned.endswith(" ->"):
             cleaned = cleaned[:-3]
-            gazinta = 'T'
-        elif cleaned.endswith('->'):
+            gazinta = "T"
+        elif cleaned.endswith("->"):
             cleaned = cleaned[:-2]
-            gazinta = 'T'
-        elif cleaned.endswith(' >'):
+            gazinta = "T"
+        elif cleaned.endswith(" >"):
             cleaned = cleaned[:-2]
-            gazinta = 'T'
-        elif cleaned.endswith('>'):
+            gazinta = "T"
+        elif cleaned.endswith(">"):
             cleaned = cleaned[:-1]
-            gazinta = 'T'
+            gazinta = "T"
 
         # If the string starts with '*', remove all '*' and then append one.
-        if cleaned.startswith('*'):
-            cleaned = cleaned.replace('*', '') + '*'
+        if cleaned.startswith("*"):
+            cleaned = cleaned.replace("*", "") + "*"
 
         # If the string starts with '/' but not with '//', prepend an extra '/'.
-        if cleaned.startswith('/') and not cleaned.startswith('//'):
-            cleaned = '//' + cleaned[1:]
+        if cleaned.startswith("/") and not cleaned.startswith("//"):
+            cleaned = "//" + cleaned[1:]
 
         # Trim whitespace again.
         cleaned = cleaned.strip()
@@ -491,7 +586,9 @@ class SQLiteEtreeDB:
 
         return cleaned, gazinta
 
-    def insert_track_metadata(self, shnid, records, overwrite=False, md5key:int=None, debug = False):
+    def insert_track_metadata(
+        self, shnid, records, overwrite=False, md5key: int = None, debug=False
+    ):
         """
         Inserts a list of track_metadata records for the given shnid.
 
@@ -520,30 +617,74 @@ class SQLiteEtreeDB:
         if debug:
             print(f"shnid: {shnid} md5key: {md5key} overwrite: {overwrite}")
         col = "md5key" if md5key is not None else "shnid"
-        value = md5key if md5key is not None else shnid        
+        value = md5key if md5key is not None else shnid
         try:
             if not overwrite:
                 # Check if any records exist for the given shnid.
-                self.cursor.execute(f"SELECT 1 FROM track_metadata WHERE {col} = ?", (value,))
+                self.cursor.execute(
+                    f"SELECT 1 FROM track_metadata WHERE {col} = ?", (value,)
+                )
                 if self.cursor.fetchone() is not None:
                     # Records already exist for this shnid, so we skip the update.
-                    logging.warning(f"Records for {col} {value} already exist. Skipping update.")
+                    logging.warning(
+                        f"Records for {col} {value} already exist. Skipping update."
+                    )
                     return
             else:
                 # Delete existing records for the given shnid.
-                self.cursor.execute(f"DELETE FROM track_metadata WHERE {col} = ?", (value,))
+                self.cursor.execute(
+                    f"DELETE FROM track_metadata WHERE {col} = ?", (value,)
+                )
 
             # Transform each record by cleaning the title field and appending title_clean and gazinta.
             new_records = []
             for rec in records:
                 # Unpack original record fields
                 # (shnid, disc_number, track_number, title, fingerprint, bit_depth, frequency, length, channels, filename)
-                shnid_val, disc_number, track_number, title, fingerprint, bit_depth, frequency, length_val, channels, filename = rec
+                (
+                    shnid_val,
+                    disc_number,
+                    track_number,
+                    title,
+                    fingerprint,
+                    bit_depth,
+                    frequency,
+                    length_val,
+                    channels,
+                    filename,
+                ) = rec
                 title_clean, gazinta = self.clean_title_field(title)
                 if md5key is None:
-                    new_record = (shnid_val, disc_number, track_number, title, fingerprint, bit_depth, frequency, length_val, channels, filename, title_clean, gazinta)
+                    new_record = (
+                        shnid_val,
+                        disc_number,
+                        track_number,
+                        title,
+                        fingerprint,
+                        bit_depth,
+                        frequency,
+                        length_val,
+                        channels,
+                        filename,
+                        title_clean,
+                        gazinta,
+                    )
                 else:
-                    new_record = (shnid_val, disc_number, track_number, title, fingerprint, bit_depth, frequency, length_val, channels, filename, title_clean, gazinta, md5key)
+                    new_record = (
+                        shnid_val,
+                        disc_number,
+                        track_number,
+                        title,
+                        fingerprint,
+                        bit_depth,
+                        frequency,
+                        length_val,
+                        channels,
+                        filename,
+                        title_clean,
+                        gazinta,
+                        md5key,
+                    )
                 new_records.append(new_record)
             if debug:
                 print(f"new_records: {new_records}")
@@ -563,16 +704,15 @@ class SQLiteEtreeDB:
             logging.error(f"Error inserting track metadata for shnid {shnid}: {e}")
             self.conn.rollback()
 
-
-    def get_track_metadata(self, shnid:int, md5key:int=None):
+    def get_track_metadata(self, shnid: int, md5key: int = None):
         """
         Retrieves all track_metadata records for the given shnid.
-        
+
         Args:
         shnid (int): The shnid whose records you want to retrieve.
         md5key (int, optional): If provided, retrieves records for this md5key instead of shnid.
         If both are provided, md5key takes precedence.
-        
+
         Returns:
         list of tuples: Each tuple corresponds to a record with the following fields:
             (shnid, disc_number, track_number, title, fingerprint, bit_depth, frequency, length, channels, filename, md5key, title_clean, gazinta)
@@ -582,8 +722,8 @@ class SQLiteEtreeDB:
         #         SELECT shnid, disc_number, track_number, title, fingerprint, bit_depth, frequency, length, channels, filename, md5key, title_clean, gazinta
         #         FROM track_metadata
         #         WHERE shnid = ?
-        #     """, (shnid,)) 
-            # rows = self.cursor.fetchall()
+        #     """, (shnid,))
+        # rows = self.cursor.fetchall()
         try:
             # If md5key is provided, use it to filter the query.
             col = "md5key" if md5key is not None else "shnid"
@@ -594,20 +734,19 @@ class SQLiteEtreeDB:
                 FROM track_metadata
                 WHERE {col} = ?
             """
-            self.cursor.execute(query, (value,))     
-            rows = self.cursor.fetchall()       
+            self.cursor.execute(query, (value,))
+            rows = self.cursor.fetchall()
             return rows
         except Exception as e:
             logging.error(f"Error retrieving track metadata for shnid {shnid}: {e}")
             return []
 
-
     def insert_checksum_file(self, record):
         """
         Inserts a single record into the checksum_files table.
-        
+
         Before inserting, any existing record with the same md5key is deleted (full replace).
-        
+
         Args:
             record (tuple): A tuple in the form (md5key, shnid, label, filename)
                             where md5key and shnid are integers, and label and filename are text.
@@ -615,8 +754,10 @@ class SQLiteEtreeDB:
         try:
             md5key = record[0]
             # Delete any existing record with the same md5key.
-            self.cursor.execute("DELETE FROM checksum_files WHERE md5key = ?", (md5key,))
-            
+            self.cursor.execute(
+                "DELETE FROM checksum_files WHERE md5key = ?", (md5key,)
+            )
+
             # Insert the new record.
             insert_sql = """
                 INSERT INTO checksum_files (md5key, shnid, label, filename)
@@ -628,8 +769,7 @@ class SQLiteEtreeDB:
             logging.error(f"Error inserting checksum_files record {record}: {e}")
             self.conn.rollback()
 
-
-    def get_checksum_files(self, shnid:int,md5key:int=None):
+    def get_checksum_files(self, shnid: int, md5key: int = None):
         """
         Retrieves all records from the checksum_files table for the given shnid or md5key. If both are provided, md5key takes precedence.
         Args:
@@ -645,7 +785,7 @@ class SQLiteEtreeDB:
             SELECT md5key, shnid, label, filename
             FROM checksum_files
             WHERE {col} = ?
-        """                
+        """
         try:
             # self.cursor.execute("""
             #     SELECT md5key, shnid, label, filename
@@ -662,26 +802,28 @@ class SQLiteEtreeDB:
     def get_checksum_file(self, md5key):
         """
         Retrieves a record from the checksum_files table for the given md5key.
-        
+
         Args:
             md5key (int): The md5key for which to retrieve the record.
-        
+
         Returns:
             tuple: (md5key, shnid, label, filename)
                             If an error occurs, None is returned.
         """
         try:
-            self.cursor.execute("""
+            self.cursor.execute(
+                """
                 SELECT md5key, shnid, label, filename
                 FROM checksum_files
                 WHERE md5key = ?
-            """, (md5key,))
+            """,
+                (md5key,),
+            )
             records = self.cursor.fetchone()
             return records
         except Exception as e:
             logging.error(f"Error retrieving checksum_files for shnid {md5key}: {e}")
             return None
-
 
     def parse_venuesource(self, overwrite=False):
         """
@@ -696,60 +838,62 @@ class SQLiteEtreeDB:
                 PRAGMA table_info(shnlist)
             """)
             columns = {row[1] for row in self.cursor.fetchall()}
-            
+
             if "Venue" not in columns:
                 self.cursor.execute("ALTER TABLE shnlist ADD COLUMN Venue TEXT")
             if "City" not in columns:
                 self.cursor.execute("ALTER TABLE shnlist ADD COLUMN City TEXT")
-            
+
             # Define condition based on the overwrite flag
             condition = "" if overwrite else "WHERE Venue IS NULL AND City IS NULL"
-            
+
             # Fetch records that need to be updated
             self.cursor.execute(f"SELECT shnid, VenueSource FROM shnlist {condition}")
             rows = self.cursor.fetchall()
-            
+
             for shnid, venuesource in rows:
                 if venuesource:
                     # Split the VenueSource by commas and remove extra whitespace
-                    parts = [part.strip() for part in venuesource.split(',')]
+                    parts = [part.strip() for part in venuesource.split(",")]
                     if len(parts) >= 2:
                         # Last two elements are considered as City
-                        city = ', '.join(parts[-2:])
+                        city = ", ".join(parts[-2:])
                         # Everything before the last two elements is considered as Venue
-                        venue = ', '.join(parts[:-2])
+                        venue = ", ".join(parts[:-2])
                     else:
                         # If there's less than 2 parts, use the entire string as Venue
                         venue = venuesource
                         city = ""
-                    
+
                     # Update the record with parsed Venue and City values
-                    self.cursor.execute("""
+                    self.cursor.execute(
+                        """
                         UPDATE shnlist
                         SET Venue = ?, City = ?
                         WHERE shnid = ?
-                    """, (venue, city, shnid))
-            
+                    """,
+                        (venue, city, shnid),
+                    )
+
             self.conn.commit()
         except sqlite3.Error as e:
             print(f"Error processing records: {e}")
             self.conn.rollback()
             raise
 
-
     def build_title_transformations_dict(self):
         """
         Args:
             N/A
-            
+
         Returns:
             dict: A dictionary with title as key and (title_clean, gazinta) as value.
         """
         results = {}
-        try:        
-        
-            self.cursor.execute("SELECT title, title_clean, gazinta FROM title_transformations where title <> title_clean;")
-        
+        try:
+            self.cursor.execute(
+                "SELECT title, title_clean, gazinta FROM title_transformations where title <> title_clean;"
+            )
 
             for row in self.cursor.fetchall():
                 title, title_clean, gazinta = row
@@ -767,17 +911,16 @@ class SQLiteEtreeDB:
         WHERE shnid NOT IN (SELECT shnid FROM checksum_files)
             AND artist_id = 2
         LIMIT 1000;
-        
+
         Returns a list of shnid values.
-        
+
         Args:
             db_path (str): Path to the SQLite database file.
-        
+
         Returns:
             list: A list of shnid values (typically integers).
         """
-        
-        
+
         query = """
             SELECT shnid 
             FROM shnlist 
@@ -791,8 +934,7 @@ class SQLiteEtreeDB:
         shnids = [row[0] for row in results]
         return shnids
 
-
-    def get_local_checksum_matches(self,checksums:list):
+    def get_local_checksum_matches(self, checksums: list):
         """
         Retrieves all records from the 'signatures' table for the given checksums.
         Args:
@@ -804,20 +946,20 @@ class SQLiteEtreeDB:
         b_unmatched_exists = False
         try:
             for checksum in checksums:
-                #if row[1] == {}:
+                # if row[1] == {}:
                 #    raise ValueError(f'Error in file {row[0]}: no tags returned')
-                #checksum = row[2]['fingerprint']
+                # checksum = row[2]['fingerprint']
                 localshnids = self.get_ffp_shnids_checksum(checksum)
                 if localshnids:
                     for item in localshnids:
                         checksum_matches.add(item)
                 else:
-                    #if we have a file that does not match, go ahead and check to see if there are more matches.
+                    # if we have a file that does not match, go ahead and check to see if there are more matches.
                     b_unmatched_exists = True
 
         except Exception as e:
             logging.error(f"error in get_local_checksum_matches: {e}")
-            raise ValueError(f'Error in file get_local_checksum_matches: {e}')
+            raise ValueError(f"Error in file get_local_checksum_matches: {e}")
         return (list(checksum_matches), b_unmatched_exists)
 
     def convert_date_format(self, date_str):
@@ -833,7 +975,9 @@ class SQLiteEtreeDB:
                 try:
                     date_obj = date_obj.replace(year=date_obj.year - 100)
                 except ValueError:
-                    date_obj = date_obj.replace(month=2, day=28, year=date_obj.year - 100)
+                    date_obj = date_obj.replace(
+                        month=2, day=28, year=date_obj.year - 100
+                    )
             return date_obj.strftime("%Y-%m-%d")
         except ValueError:
             return date_str
@@ -843,7 +987,7 @@ class SQLiteEtreeDB:
         First, if the source string starts with "artist_name:" (e.g. "Phish:"), remove that prefix.
         Then, if the source string starts with "flac" followed by a 4-digit bitrate, ensure it is
         immediately followed by a semicolon and a space.
-        
+
         Examples:
         "Phish: flac2496, Master"  -> "flac2496; Master"
         "Phish: flac2496.Master"    -> "flac2496; Master"
@@ -855,7 +999,7 @@ class SQLiteEtreeDB:
 
         source_str = re.sub(r"<.*?>", "", source_str)
         # This regex captures the "flac" part with 4 digits, any punctuation (or none), and the rest.
-        pattern = re.compile(r'^(flac\d{4})([,.;]?\s*)(.*)$', re.IGNORECASE)
+        pattern = re.compile(r"^(flac\d{4})([,.;]?\s*)(.*)$", re.IGNORECASE)
         match = pattern.match(source_str)
         if match:
             flac_part = match.group(1)
@@ -864,7 +1008,7 @@ class SQLiteEtreeDB:
             return f"{flac_part}; {rest}" if rest else f"{flac_part}; "
         return source_str
 
-    def get_remote_checksum_matches(self,checksums:list):
+    def get_remote_checksum_matches(self, checksums: list):
         """
         Uses the etree-lcdb module to find remote matches for the given checksums.
         Args:
@@ -873,12 +1017,12 @@ class SQLiteEtreeDB:
         """
         try:
             print(f"running get_remote_checksum_matches for {len(checksums)} checksums")
-            checksums_found = {}  
+            checksums_found = {}
             performances_found = {}
             shnids_to_add = []
             checksumfiles = {}
             checksumfilecontent = {}
-            #use the first checksum in the list to see if there are any remote checksums     
+            # use the first checksum in the list to see if there are any remote checksums
             checksum = checksums[0] if checksums else None
             if checksum is None:
                 print("No checksums provided")
@@ -892,130 +1036,142 @@ class SQLiteEtreeDB:
                 print("No remote match shnids found")
                 return None
             existing_events = self.get_existing_events()
-            
+
             for shnid in shnids:
                 if shnid in existing_events:
                     print(f"Skipping existing shnid {shnid}")
                     continue
                 perf = lcdb.find_performance_by_shnid(shnid)
-                #print(f"{perf=}")
+                # print(f"{perf=}")
                 performance = lcdb.parse_performance_by_shnid(perf)
-                date = performance.get('date')
+                date = performance.get("date")
                 print(f"{date=}")
                 if date:
                     date = self.convert_date_format(date)
-                venue = performance.get('venue','')
-                city = performance.get('city','')
-                state = performance.get('state','')
-                venue_source = f"{venue}, {city}, {state}".strip().strip(',')
-                circdate = performance.get('circdate','')
-                source = performance.get('comments','')
-                artist_id = performance.get('artist_id',None)
-                artist_name = performance.get('artist_name','')
+                venue = performance.get("venue", "")
+                city = performance.get("city", "")
+                state = performance.get("state", "")
+                venue_source = f"{venue}, {city}, {state}".strip().strip(",")
+                circdate = performance.get("circdate", "")
+                source = performance.get("comments", "")
+                artist_id = performance.get("artist_id", None)
+                artist_name = performance.get("artist_name", "")
                 source = self.fix_source_column(source, artist_name)
-                print(f"Found remote performance for shnid {shnid}: {date} {venue_source} {circdate} {source}")
-                #INSERT INTO shnlist (Date, VenueSource, CircDateAddedSource, ChecksumsSource, Source, shnid,artist_id,Venue,City)
-                record = [date, venue_source, circdate, 'N/A', source, shnid, artist_id]
+                print(
+                    f"Found remote performance for shnid {shnid}: {date} {venue_source} {circdate} {source}"
+                )
+                # INSERT INTO shnlist (Date, VenueSource, CircDateAddedSource, ChecksumsSource, Source, shnid,artist_id,Venue,City)
+                record = [date, venue_source, circdate, "N/A", source, shnid, artist_id]
                 shnids_to_add.append(record)
-#    DESIRED_COLUMNS = [
-#         "Date",
-#         "Venue Source",
-#         "Circ Date - Added Source",
-#         "Checksums Source",
-#         "# Source"
-#     ]
-#     FINAL_COLUMNS = DESIRED_COLUMNS + ["shnid"]
-#      
+                #    DESIRED_COLUMNS = [
+                #         "Date",
+                #         "Venue Source",
+                #         "Circ Date - Added Source",
+                #         "Checksums Source",
+                #         "# Source"
+                #     ]
+                #     FINAL_COLUMNS = DESIRED_COLUMNS + ["shnid"]
+                #
                 print(f"{performances_found=}")
                 chk = lcdb.find_checksums_by_shnid(shnid)
-                #print(f"{chk=}")
-                lcdb.parse_checksums_by_shnid(chk,shnid,checksums_found)
-                #print(f"checksums_found: {checksums_found}")
+                # print(f"{chk=}")
+                lcdb.parse_checksums_by_shnid(chk, shnid, checksums_found)
+                # print(f"checksums_found: {checksums_found}")
                 for shnid in checksums_found.keys():
                     checksum_dict = checksums_found[shnid]
-                    fp_ext = ''
+                    fp_ext = ""
                     for md5key in checksum_dict.keys():
                         desc, body, modif = checksum_dict[md5key]
-                        file_lower = desc.lower() if desc else ''
+                        file_lower = desc.lower() if desc else ""
                         fingerprint_tuples = None
-                        if 'ffp' in file_lower:
+                        if "ffp" in file_lower:
                             fingerprint_tuples = parse_flac_fingerprint(body)
-                            fp_ext = 'ffp'
-                        elif 'st5' in file_lower:
+                            fp_ext = "ffp"
+                        elif "st5" in file_lower:
                             fingerprint_tuples = parse_st5(body)
-                            fp_ext = 'st5'
+                            fp_ext = "st5"
                         else:
-                            #assume it is an md5, which is only useful for trading
+                            # assume it is an md5, which is only useful for trading
                             fingerprint_tuples = parse_md5(body)
-                        
+
                         if not fingerprint_tuples:
                             fingerprint_tuples = parse_flac_fingerprint(body)
-                            fp_ext = 'st5'
+                            fp_ext = "st5"
                         if not fingerprint_tuples:
                             fingerprint_tuples = parse_st5(body)
-                            fp_ext = 'st5'
-                        if not fingerprint_tuples:            
-                            fingerprint_tuples = parse_md5(body)
-                            fp_ext = 'md5'
+                            fp_ext = "st5"
                         if not fingerprint_tuples:
-                            raise ValueError(f'All Three parsing methods failed for {shnid=}')
-                        #print(f"Parsed {len(fingerprint_tuples)} fingerprints for shnid {shnid} md5key {md5key}")
-                        
+                            fingerprint_tuples = parse_md5(body)
+                            fp_ext = "md5"
+                        if not fingerprint_tuples:
+                            raise ValueError(
+                                f"All Three parsing methods failed for {shnid=}"
+                            )
+                        # print(f"Parsed {len(fingerprint_tuples)} fingerprints for shnid {shnid} md5key {md5key}")
+
                         records = []
                         if fingerprint_tuples:
-                            for audio_filename,audio_checksum in fingerprint_tuples:
+                            for audio_filename, audio_checksum in fingerprint_tuples:
                                 base_filename, ext = os.path.splitext(audio_filename)
-                                ext = ext.lstrip('.')
+                                ext = ext.lstrip(".")
                                 try:
                                     shnid_int = int(shnid)
                                 except ValueError:
                                     shnid_int = shnid
-                                records.append((shnid_int, md5key, base_filename, ext, audio_checksum))
+                                records.append(
+                                    (
+                                        shnid_int,
+                                        md5key,
+                                        base_filename,
+                                        ext,
+                                        audio_checksum,
+                                    )
+                                )
                         if records:
-                            checksumfiles[md5key] = [shnid_int, desc,f"{desc}.{fp_ext}"]
-                            checksumfilecontent[md5key] = records                     
-                        #print(f"{records=}")
-                #print(f"Found remote match for shnid {shnid}")
+                            checksumfiles[md5key] = [
+                                shnid_int,
+                                desc,
+                                f"{desc}.{fp_ext}",
+                            ]
+                            checksumfilecontent[md5key] = records
+                        # print(f"{records=}")
+                # print(f"Found remote match for shnid {shnid}")
             if shnids_to_add:
                 print(f"Inserting {len(shnids_to_add)} new shnids")
                 self.store_artist_events(shnids_to_add)
 
                 for key, value in checksumfiles.items():
                     checksums = sorted(checksumfilecontent[key])
-                    #below used for comparing data from files
-                    #checksums_only = [row[4] for row in md5_checksums[key]]
-                    checksumfile = (key,value[0],value[1],value[2])
+                    # below used for comparing data from files
+                    # checksums_only = [row[4] for row in md5_checksums[key]]
+                    checksumfile = (key, value[0], value[1], value[2])
                     self.insert_checksum_file(checksumfile)
                     self.store_signatures(checksums)
                 return True
             else:
                 print("No new shnids to add")
                 return False
-    
+
         except Exception as e:
             logging.error(f"error in get_remote_checksum_matches: {e}")
-            raise ValueError(f'Error in file get_remote_checksum_matches: {e}')
-        #print(f"Found {len(performances_found)} remote performances")
-
+            raise ValueError(f"Error in file get_remote_checksum_matches: {e}")
+        # print(f"Found {len(performances_found)} remote performances")
 
     def vacuum_database(self):
         """
         Connects to the SQLite database at db_path and runs the VACUUM command
         to compact the database.
-        
+
         :param db_path: Path to the SQLite database file.
         """
         try:
-            
             self.conn.execute("VACUUM;")
             self.conn.commit()
             print(f"Database '{self.db_path}' vacuumed successfully.")
         except sqlite3.Error as e:
             print(f"An error occurred while vacuuming the database: {e}")
 
-
-
-    def dump_sqlite_to_csv(self, folder='db/extract', db_path=None):
+    def dump_sqlite_to_csv(self, folder="db/extract", db_path=None):
         """
         Dumps all tables from the given SQLite database to CSV files.
         Each CSV file is named after its table (e.g., 'table_name.csv') and
@@ -1046,7 +1202,9 @@ class SQLiteEtreeDB:
         for table in tables:
             table_name = table[0]
             csv_filename = f"{table_name}.csv"
-            csv_filepath = os.path.join(folder, csv_filename) if folder else csv_filename
+            csv_filepath = (
+                os.path.join(folder, csv_filename) if folder else csv_filename
+            )
 
             # Query all rows from the table
             cursor.execute(f"SELECT * FROM {table_name}")
@@ -1056,40 +1214,42 @@ class SQLiteEtreeDB:
             headers = [description[0] for description in cursor.description]
 
             # Write the data to a CSV file
-            with open(csv_filepath, "w", newline='', encoding="utf-8") as csv_file:
+            with open(csv_filepath, "w", newline="", encoding="utf-8") as csv_file:
                 writer = csv.writer(csv_file)
                 writer.writerow(headers)  # Write header row
-                writer.writerows(rows)    # Write all table rows
+                writer.writerows(rows)  # Write all table rows
 
             print(f"Exported table '{table_name}' to '{csv_filepath}'")
-        
+
         # Close the database connection
         conn.close()
 
 
 class ChecksumFile:
-    def __init__(self,etreedb:SQLiteEtreeDB,md5key:int):
+    def __init__(self, etreedb: SQLiteEtreeDB, md5key: int):
         self.id = md5key
         filedetails = etreedb.get_checksum_file(self.id)
         if filedetails:
             self.shnid = filedetails[1]
             self.label = filedetails[2]
             self.filename = filedetails[3]
-        else: 
-            raise ValueError(f'No Matching Checksum returned for {md5key=}')
+        else:
+            raise ValueError(f"No Matching Checksum returned for {md5key=}")
         self._checksumlist = None
         self.db = etreedb
-    @property 
+
+    @property
     def checksumlist(self):
         if self._checksumlist is None:
             self._checksumlist = self.load_checksumlist(self.db)
         return self._checksumlist
-    
-    def load_checksumlist(self,etreedb:SQLiteEtreeDB):
-        return etreedb.get_checksums_only_by_md5key(self.id)      
+
+    def load_checksumlist(self, etreedb: SQLiteEtreeDB):
+        return etreedb.get_checksums_only_by_md5key(self.id)
+
 
 class EtreeRecording:
-    def __init__(self,etreedb:SQLiteEtreeDB,shnid:int,md5key:int=None):
+    def __init__(self, etreedb: SQLiteEtreeDB, shnid: int, md5key: int = None):
         self.id = shnid
         self.md5key = md5key
         details = etreedb.get_shnid_details(self.id)
@@ -1115,21 +1275,21 @@ class EtreeRecording:
     def checksums(self):
         if self._checksums is None:
             self._checksums = self._load_checksums(self.db)
-        return self._checksums  
-            
-    def _load_checksums(self,etreedb:SQLiteEtreeDB):
-        checksumlist = self.db.get_checksum_files(self.id,self.md5key)
-        return [ChecksumFile(etreedb,x[0]) for x in checksumlist]
+        return self._checksums
+
+    def _load_checksums(self, etreedb: SQLiteEtreeDB):
+        checksumlist = self.db.get_checksum_files(self.id, self.md5key)
+        return [ChecksumFile(etreedb, x[0]) for x in checksumlist]
 
     @property
     def tracks(self):
         if self._tracks is None:
             self._tracks = self._load_tracks(self.db)
-        return self._tracks          
+        return self._tracks
 
-    def _load_tracks(self,etreedb:SQLiteEtreeDB):
-        tracklist = etreedb.get_track_metadata(self.id,self.md5key)
-        #print(tracklist)
+    def _load_tracks(self, etreedb: SQLiteEtreeDB):
+        tracklist = etreedb.get_track_metadata(self.id, self.md5key)
+        # print(tracklist)
         return [Track(*track) for track in tracklist]
 
     def get_checksum(self, md5key: int):
@@ -1141,26 +1301,47 @@ class EtreeRecording:
             if checksum.id == md5key:
                 return checksum
         return None
+
     def get_track_by_checksum(self, checksum):
         for track in self.tracks:
             if track.fingerprint == checksum:
                 return track
 
     def build_info_file(self):
-        #TODO: add gazinta substitution here, use config file for title format
+        # TODO: add gazinta substitution here, use config file for title format
         print(f"Artist: {self.artist}")
-        bit = f"[{self.tracks[0].bitabbrev}]" if self.tracks and self.tracks[0].bitabbrev else ""
+        bit = (
+            f"[{self.tracks[0].bitabbrev}]"
+            if self.tracks and self.tracks[0].bitabbrev
+            else ""
+        )
         print(f"Album: {self.date} {self.etreevenue} {bit} ({self.id})")
 
         print(f"Comment: {self.source}")
         for track in self.tracks:
             disc_str = f"d{track.disc.split('/')[0]}" if track.disc else ""
             track_str = f"t{track.tracknum.split('/')[0]}. " if track.tracknum else ""
-            arrow = " ->" if track.gazinta == 'T' else ""
+            arrow = " ->" if track.gazinta == "T" else ""
             print(f"{disc_str}{track_str}{track.title_clean}{arrow} [{track.length}]")
 
+
 class Track:
-    def __init__(self,shnid, disc_number, track_number, title, fingerprint, bit_depth, frequency, length, channels, filename, md5key,title_clean,gazinta):
+    def __init__(
+        self,
+        shnid,
+        disc_number,
+        track_number,
+        title,
+        fingerprint,
+        bit_depth,
+        frequency,
+        length,
+        channels,
+        filename,
+        md5key,
+        title_clean,
+        gazinta,
+    ):
         self.shnid = shnid
         self.disc = disc_number
         self.tracknum = track_number
@@ -1172,32 +1353,34 @@ class Track:
         self.channels = channels
         self.filename = filename
         self.md5key = md5key
-        #self.title_clean = title_clean
+        # self.title_clean = title_clean
         self.gazinta = gazinta
-        self.bitabbrev = bit_depth+'-'+frequency.rstrip("0")
+        self.bitabbrev = bit_depth + "-" + frequency.rstrip("0")
+
 
 def copy_file(source_path: str, copy_path: str):
     """
     Copies a file from source_path to copy_path.
     Overwrites the destination file if it exists.
     Raises a ValueError if the source and destination paths are identical.
-    
+
     Args:
         source_path (str): The full path of the file to copy.
         copy_path (str): The full path where the file should be copied.
     """
     source_abs = os.path.abspath(source_path)
     copy_abs = os.path.abspath(copy_path)
-    
+
     if source_abs == copy_abs:
         raise ValueError("Error: Source and destination paths are identical.")
-    
+
     try:
         shutil.copy2(source_abs, copy_abs)
         print(f"Successfully copied from '{source_abs}' to '{copy_abs}'.")
     except Exception as e:
         print(f"Error copying file from '{source_abs}' to '{copy_abs}': {e}")
         raise
+
 
 def create_zip_archive(zip_name: str, items: list):
     """
@@ -1209,7 +1392,7 @@ def create_zip_archive(zip_name: str, items: list):
         zip_name (str): The path and name for the output zip archive.
         items (list): A list of file paths to add to the archive.
     """
-    with zipfile.ZipFile(zip_name, 'w', zipfile.ZIP_DEFLATED) as zipf:
+    with zipfile.ZipFile(zip_name, "w", zipfile.ZIP_DEFLATED) as zipf:
         for item in items:
             if os.path.exists(item):
                 # Use os.path.basename(item) as arcname to store only the file name
@@ -1218,18 +1401,19 @@ def create_zip_archive(zip_name: str, items: list):
                 print(f"Warning: {item} does not exist and will be skipped.")
     print(f"Successfully created zip archive: {zip_name}")
 
+
 if __name__ == "__main__":
-    db_path="db/etree_scrape.db"
+    db_path = "db/etree_scrape.db"
     db_copy_path = "db/etree_tag_db.db"
     zip_path = "db/etree_tag_db.zip"
-    db = SQLiteEtreeDB(db_path,log_level=logging.INFO)  # Change log level as needed
-    #rec = EtreeRecording(db,124439)
-    #rec.build_info_file()  #only works if the track metadata is populated. 
-    #db.cursor.execute('SELECT COUNT(*) FROM track_metadata;')
-    #count = db.cursor.fetchone()[0]
-    #print(f'{count=}')
-    #db.parse_venuesource()
+    db = SQLiteEtreeDB(db_path, log_level=logging.INFO)  # Change log level as needed
+    # rec = EtreeRecording(db,124439)
+    # rec.build_info_file()  #only works if the track metadata is populated.
+    # db.cursor.execute('SELECT COUNT(*) FROM track_metadata;')
+    # count = db.cursor.fetchone()[0]
+    # print(f'{count=}')
+    # db.parse_venuesource()
     db.dump_sqlite_to_csv()
     db.close()
-    copy_file(db_path,db_copy_path)
-    create_zip_archive(zip_path,[db_copy_path])
+    copy_file(db_path, db_copy_path)
+    create_zip_archive(zip_path, [db_copy_path])

@@ -6,5 +6,22 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "mutagen>=1.47.0",
+    "pytest>=8.4.2",
+    "rarfile>=4.2",
+    "requests>=2.32.4",
+    "ruff>=0.13.3",
     "tqdm>=4.67.1",
 ]
+
+[tool.ruff]
+line-length = 88
+indent-width = 4
+
+[tool.ruff.lint]
+select = ["E", "F"]
+extend-ignore = ["E501"]
+
+
+# Optional: formatter-specific tweaks
+#[tool.ruff.format]
+#quote-style = "preserve"

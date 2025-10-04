@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 import xml.etree.ElementTree as ET
 import os
-import sys
+
 
 def parse_archive_xml(xml_filename):
-
-
-    #xml_filename = sys.argv[1]
+    # xml_filename = sys.argv[1]
     # Parse the XML file
     tree = ET.parse(xml_filename)
     root = tree.getroot()
@@ -26,6 +24,7 @@ def parse_archive_xml(xml_filename):
                     out_file.write(f"{track} {title}\n")
 
     print(f"Output written to {output_filename}")
+
 
 if __name__ == "__main__":
     filename = r"M:\To_Tag\gd1970\gd1970-05-24.6159.aud.hanno-uli.sbeok.flac16\gd1970-05-24.aud.6159.bunjes.shnf_files.xml"

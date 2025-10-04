@@ -21,7 +21,9 @@ def test_find_artwork_from_folder(tmp_path: Path):
     art_file = art_dir / "gd1975-03-23.jpg"
     art_file.write_text("dummy")
 
-    tagger = _make_tagger([str(tmp_path / "art")], {"gd": str(tmp_path / "default.jpg")})
+    tagger = _make_tagger(
+        [str(tmp_path / "art")], {"gd": str(tmp_path / "default.jpg")}
+    )
     result = tagger._find_artwork("gd", "1975-03-23")
     assert result == art_file
 
@@ -35,7 +37,9 @@ def test_find_artwork_default(tmp_path: Path):
 
 
 def test_find_artwork_missing_default(tmp_path: Path):
-    tagger = _make_tagger([str(tmp_path / "art")], {"gd": str(tmp_path / "default.jpg")})
+    tagger = _make_tagger(
+        [str(tmp_path / "art")], {"gd": str(tmp_path / "default.jpg")}
+    )
     with pytest.raises(FileNotFoundError):
         tagger._find_artwork("gd", "1975-03-23")
 
@@ -44,4 +48,3 @@ def test_find_artwork_no_default(tmp_path: Path):
     tagger = _make_tagger([str(tmp_path / "art")], {})
     result = tagger._find_artwork("gd", "1975-03-23")
     assert result is None
-

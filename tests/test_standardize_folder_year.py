@@ -6,8 +6,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 # Provide a minimal stub for the mutagen.flac module used by ConcertTagger
-mutagen = types.ModuleType('mutagen')
-flac_mod = types.ModuleType('mutagen.flac')
+mutagen = types.ModuleType("mutagen")
+flac_mod = types.ModuleType("mutagen.flac")
+
 
 class DummyInfo:
     length = 0
@@ -36,17 +37,17 @@ sys.modules.setdefault("mutagen.flac", flac_mod)
 
 
 # Stub out tqdm to avoid dependency during tests
-tqdm_mod = types.ModuleType('tqdm')
+tqdm_mod = types.ModuleType("tqdm")
 tqdm_mod.tqdm = lambda x=None, **k: x
-sys.modules.setdefault('tqdm', tqdm_mod)
+sys.modules.setdefault("tqdm", tqdm_mod)
 
 from tagger import ConcertTagger
 from recordingfiles import RecordingFolder
 
 
-
-def _make_tagger(folder: Path, date="1975-07-05", shnid=12345, abbr="gd") -> ConcertTagger:
-
+def _make_tagger(
+    folder: Path, date="1975-07-05", shnid=12345, abbr="gd"
+) -> ConcertTagger:
     tg = ConcertTagger.__new__(ConcertTagger)
     tg.config = {"cover": {"artwork_folders": {}, "default_images": {}}}
     tg.folderpath = folder
@@ -74,7 +75,6 @@ def test_standardize_folder_year_already_four(tmp_path: Path):
     assert tagger.folderpath.name == "gd1975-07-05.12345.test"
 
 
-
 def test_standardize_folder_year_no_prefix(tmp_path: Path):
     folder = tmp_path / "ph75-07-05.test"
     folder.mkdir()
@@ -82,7 +82,6 @@ def test_standardize_folder_year_no_prefix(tmp_path: Path):
     tagger.folder._standardize_folder_year(tagger.etreerec)
     tagger.folderpath = tagger.folder.folder
     assert tagger.folderpath.name == folder.name
-
 
 
 def test_date_correction_and_shnid_insert(tmp_path: Path):
@@ -101,5 +100,3 @@ def test_move_existing_shnid(tmp_path: Path):
     tagger.folder._standardize_folder_year(tagger.etreerec)
     tagger.folderpath = tagger.folder.folder
     assert tagger.folderpath.name == "gd1975-07-05.777.sbd.flac16"
-
-

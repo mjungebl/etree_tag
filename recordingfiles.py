@@ -1,11 +1,12 @@
 from pathlib import Path
-from mutagen.flac import FLAC, Picture
+from mutagen.flac import FLAC
 import logging
 from sqliteetreedb import SQLiteEtreeDB, EtreeRecording
 from losslessfiles import ffp
 import re
 from datetime import datetime
-#from import_show_metadata import import_show_folders
+# from import_show_metadata import import_show_folders
+
 
 class RecordingFolder:
     def __init__(self, concert_folder: str, etree_db: SQLiteEtreeDB | None = None):
@@ -29,13 +30,12 @@ class RecordingFolder:
             logging.error(f"{concert_folder} is not a valid directory.")
             raise ValueError(f"{concert_folder} is not a valid directory.")
         self.foldershnid = self._parse_shnid(self.folder.name)
-        self.musicfiles =  [MusicFile(str(x)) for x in self.folder.glob("*.flac")]
+        self.musicfiles = [MusicFile(str(x)) for x in self.folder.glob("*.flac")]
 
         # identify optional companion files
-        self.info_file = (
-            self._find_file_by_keyword("txt", "info")
-            or self._find_file_by_extension("txt")
-        )
+        self.info_file = self._find_file_by_keyword(
+            "txt", "info"
+        ) or self._find_file_by_extension("txt")
         self.fingerprint_file = self._find_file_by_extension("ffp")
         self.st5_file = self._find_file_by_extension("st5")
         self.artwork_file = self._find_artwork()
@@ -88,7 +88,7 @@ class RecordingFolder:
     #                             print(error)
     #                             logging.error(error)
     #                             continue
-                        
+
     #                     if None in tracks:
     #                         missingtitlefiles = ', '.join([file.name for file in show.folder.musicfiles if file.title is None])
     #                         error = f'Error Processing folder {concert_folder}: missing track title(s) {missingtitlefiles}'
@@ -108,92 +108,115 @@ class RecordingFolder:
     #                     mismatchlog.write(f"{concert_folder}\n")
     #     return successfully_imported, existing_folders
 
-    def _classify_folder(self,folder_name: str) -> str:
+    def _classify_folder(self, folder_name: str) -> str:
         """
         Classify the folder_name based on various substring patterns, similar to a SQL CASE statement.
-        Currently used for tagging shows. 
-        
+        Currently used for tagging shows.
+
         The matching is done on the lowercase version of folder_name.
-        
+
         Returns:
             A classification string such as 'SBD', 'Studio', 'Ultramatrix', 'MTX', 'Pre-FM', 'FM', 'AUD', or 'DTS',
             or None if no pattern matches.
         """
         lower_folder = folder_name.lower()
-        
+
         # Check in the following order:
-        if 'ultra' in lower_folder:
-            return 'Ultramatrix'
-        elif 'sbd' in lower_folder or 'bettyboard' in lower_folder or 'sdb' in lower_folder:
-            return 'SBD'
-        elif 'studio' in lower_folder:
-            return 'Studio'
-        elif 'rehear' in lower_folder:
-            return 'Rehearsal'        
-        elif 'mtx' in lower_folder or 'matrix' in lower_folder:
-            return 'MTX'
-        elif 'fob' in lower_folder:
-            return 'AUD'
-        elif 'pre' in lower_folder and 'fm' in lower_folder:
-            return 'Pre-FM'
-        elif 'fm' in lower_folder:
-            return 'FM'
-        elif any(x in lower_folder for x in [
-                'aud', 'nak', 'senn', 'akg', 'sony', 'beyer',
-                'schoeps', 'scheops', 'schopes', 'bk4011', 'at835',
-                'neumann', 'shure', 'ecm', 'b&k', 'pzm', 'ec7', 'sanken','kmf4']):
-            return 'AUD'
-        elif 'dts' in lower_folder:
-            return 'DTS'
+        if "ultra" in lower_folder:
+            return "Ultramatrix"
+        elif (
+            "sbd" in lower_folder
+            or "bettyboard" in lower_folder
+            or "sdb" in lower_folder
+        ):
+            return "SBD"
+        elif "studio" in lower_folder:
+            return "Studio"
+        elif "rehear" in lower_folder:
+            return "Rehearsal"
+        elif "mtx" in lower_folder or "matrix" in lower_folder:
+            return "MTX"
+        elif "fob" in lower_folder:
+            return "AUD"
+        elif "pre" in lower_folder and "fm" in lower_folder:
+            return "Pre-FM"
+        elif "fm" in lower_folder:
+            return "FM"
+        elif any(
+            x in lower_folder
+            for x in [
+                "aud",
+                "nak",
+                "senn",
+                "akg",
+                "sony",
+                "beyer",
+                "schoeps",
+                "scheops",
+                "schopes",
+                "bk4011",
+                "at835",
+                "neumann",
+                "shure",
+                "ecm",
+                "b&k",
+                "pzm",
+                "ec7",
+                "sanken",
+                "kmf4",
+            ]
+        ):
+            return "AUD"
+        elif "dts" in lower_folder:
+            return "DTS"
         else:
             return None
 
-    def build_track_inserts (self):
+    def build_track_inserts(self):
         results = []
         for file in self.musicfiles:
             x = (
-            file.disc,
-            file.tracknum,
-            file.title,
-            file.checksum,
-            file.audio.info.bits_per_sample,
-            file.audio.info.sample_rate,
-            file.length,
-            file.audio.info.channels,
-            file.name
+                file.disc,
+                file.tracknum,
+                file.title,
+                file.checksum,
+                file.audio.info.bits_per_sample,
+                file.audio.info.sample_rate,
+                file.length,
+                file.audio.info.channels,
+                file.name,
             )
 
             results.append(x)
         return results
 
-    def _get_checksums(self,files:list):
+    def _get_checksums(self, files: list):
         self.checksums = []
         for file in files:
             self.checksums.append(file.checksum)
         return self.checksums
 
-    def _parse_shnid(self,input_str):
+    def _parse_shnid(self, input_str):
         """
         Parses the input string to find the first sequence of characters between periods
         that is entirely numeric. Leading zeros are removed by converting the value to an integer.
-        
+
         For example:
         "gd1980-04-28.0088858.fob.glassberg.motb.0040.flac16"
         will return:
         88858
-        
+
         Parameters:
         input_str (str): The string to parse.
-        
+
         Returns:
         int or None: The parsed shnid as an integer, or None if no numeric part is found.
         """
-        parts = input_str.split('.')
+        parts = input_str.split(".")
         for part in parts:
             if part.isdigit():
-                return int(part) 
+                return int(part)
         return None
-
 
     def _find_file_by_keyword(self, ext: str, keyword: str):
         """Return the first file with extension 'ext' whose name contains 'keyword'."""
@@ -249,27 +272,28 @@ class RecordingFolder:
 
         if not self.checksums:
             return None
-        
+
         matches, mismatch = db.get_local_checksum_matches(self.checksums)
         if debug:
-            print(f'{self.checksums=}')
-            print(f'{matches=}')
-            print(f'{mismatch=}')
+            print(f"{self.checksums=}")
+            print(f"{matches=}")
+            print(f"{mismatch=}")
 
         checksum_pairs = set()
+
         def _find_matching_pairs(match_list):
             for shnid, md5key in match_list:
                 if debug:
-                    print(f'{shnid=}', f'{md5key=}')
+                    print(f"{shnid=}", f"{md5key=}")
                 try:
                     rec = EtreeRecording(db, shnid, md5key)
                 except Exception as e:
-                    msg = f'Error encountered for {self.folder}: {e}'
+                    msg = f"Error encountered for {self.folder}: {e}"
                     if debug:
                         print(msg)
                     raise Exception(msg)
                 if debug:
-                    print(f'{rec.id=}', f'{rec.md5key=}', f'{rec.checksums=}')
+                    print(f"{rec.id=}", f"{rec.md5key=}", f"{rec.checksums=}")
                 for sig in rec.checksums:
                     if set(sig.checksumlist) == set(self.checksums):
                         print(
@@ -279,33 +303,34 @@ class RecordingFolder:
                             return rec
                         checksum_pairs.add((sig.shnid, sig.id))
                         break
+
         if not mismatch:
-            _find_matching_pairs(matches)
+            found = _find_matching_pairs(matches)
+            if found is not None:
+                return found
 
         result = None
         if not checksum_pairs:
-            #attempt to find remote matches. If anything new is found, add it to the local db
+            # attempt to find remote matches. If anything new is found, add it to the local db
             remote_matches = db.get_remote_checksum_matches(self.checksums)
             if remote_matches:
                 matches, mismatch = db.get_local_checksum_matches(self.checksums)
                 # if self.
                 if not mismatch:
-                    _find_matching_pairs(matches)
+                    found = _find_matching_pairs(matches)
+                    if found is not None:
+                        return found
         for shnid, md5key in checksum_pairs:
             result = EtreeRecording(db, shnid, md5key)
             if self.foldershnid == result.id:
-                print(
-                    f'Exact match found for shnid {result.id} in folder name'
-                )
-                logging.info(
-                    f'Exact match found for shnid {result.id} in folder name'
-                )
+                print(f"Exact match found for shnid {result.id} in folder name")
+                logging.info(f"Exact match found for shnid {result.id} in folder name")
                 return result
             print(
-                f'No EXACT MATCH found for shnid {self.foldershnid} using {result.id}'
+                f"No EXACT MATCH found for shnid {self.foldershnid} using {result.id}"
             )
             logging.warn(
-                f'No EXACT MATCH found for shnid {self.foldershnid} using {result.id}'
+                f"No EXACT MATCH found for shnid {self.foldershnid} using {result.id}"
             )
         return result
 
@@ -359,7 +384,11 @@ class RecordingFolder:
                 month = "??"
                 day = "??"
             after_date = after_year.lstrip("-")
-            after_date = f".{after_date}" if after_date and not after_date.startswith(".") else after_date
+            after_date = (
+                f".{after_date}"
+                if after_date and not after_date.startswith(".")
+                else after_date
+            )
 
         # Compare to DB date when numeric
         candidate_date = f"{year}-{month}-{day}"
@@ -389,7 +418,9 @@ class RecordingFolder:
             try:
                 self.folder.rename(new_path)
             except FileExistsError:
-                logging.error(f"Cannot rename {self.folder} to {new_path}: target exists")
+                logging.error(
+                    f"Cannot rename {self.folder} to {new_path}: target exists"
+                )
                 return
 
             # Reinitialize to update all path-based attributes
@@ -416,31 +447,36 @@ class RecordingFolder:
 
 
 class MusicFile:
-    def __init__(self,path):
+    def __init__(self, path):
         self.path = path
         self.name = Path(path).name
         self.audio = FLAC(path)
         self.length = self.format_time_seconds_to_mins_seconds(self.audio.info.length)
-        self.checksum = format(self.audio.info.md5_signature, '032x')
-        self.disc = self.audio['discnumber'][0] if 'discnumber' in self.audio else None
-        self.tracknum = self.audio['tracknumber'][0] if 'tracknumber' in self.audio else None
-        self.title = self.audio['title'][0].strip() if 'title' in self.audio else None        
-    def format_time_seconds_to_mins_seconds(self,seconds):
+        self.checksum = format(self.audio.info.md5_signature, "032x")
+        self.disc = self.audio["discnumber"][0] if "discnumber" in self.audio else None
+        self.tracknum = (
+            self.audio["tracknumber"][0] if "tracknumber" in self.audio else None
+        )
+        self.title = self.audio["title"][0].strip() if "title" in self.audio else None
+
+    def format_time_seconds_to_mins_seconds(self, seconds):
         seconds = int(seconds)
         minutes = seconds // 60
         remaining_seconds = seconds % 60
-        return f"{minutes:02}:{remaining_seconds:02}"     
+        return f"{minutes:02}:{remaining_seconds:02}"
 
 
 # Example usage:
 if __name__ == "__main__":
     import logging
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
-    #TODO: below is unimplemented for load to db so far, but will be used to pull entries into the database from files. Current code needs a cleanup and will be merged into this module
+
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s"
+    )
+    # TODO: below is unimplemented for load to db so far, but will be used to pull entries into the database from files. Current code needs a cleanup and will be merged into this module
     concert_folder = r"X:\Downloads\_FTP\gdead.1982.project_missing\gd1982-09-12.7826.sbd.ladner.sbeok.flac16"
     etree_db = SQLiteEtreeDB()
     tagger = RecordingFolder(concert_folder, etree_db)
     rows = tagger.build_track_inserts()
     for row in rows:
         print(row)
-        

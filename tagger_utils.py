@@ -9,7 +9,7 @@
 # title = tb.generate_title()  # your method from earlier; switch it to use self.config
 
 from __future__ import annotations
-from typing import  Any, Callable, List, Optional, Mapping, Sequence, Tuple
+from typing import Any, Callable, List, Optional, Mapping, Sequence, Tuple
 import logging
 from datetime import datetime
 from pathlib import Path
@@ -19,10 +19,11 @@ import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 
+
 def extract_year(date_str):
     # Remove any leading/trailing whitespace.
     date_str = date_str.strip()
-    
+
     # First, try to parse the string as a valid ISO date (YYYY-MM-DD).
     try:
         valid_date = datetime.strptime(date_str, "%Y-%m-%d")
@@ -37,7 +38,7 @@ def extract_year(date_str):
         return int(match.group(1))
 
     # Look for a two-digit year pattern at the end of the string.
-    match = re.search(r'(\d{2})$', date_str)
+    match = re.search(r"(\d{2})$", date_str)
     if match:
         two_digit = int(match.group(1))
         # Use the last two digits of the current year (e.g., "25" for 2025).
@@ -49,6 +50,7 @@ def extract_year(date_str):
 
     # If no valid year is found, return None.
     return None
+
 
 class TitleBuilder:
     """
@@ -65,6 +67,7 @@ class TitleBuilder:
     logger : logging.Logger, optional
         If omitted, a module logger is used.
     """
+
     def __init__(
         self,
         etreerec: Any,
@@ -80,9 +83,12 @@ class TitleBuilder:
 
         # --- light validation ---
         if "preferences" not in self.config or "album_tag" not in self.config:
-            raise ValueError("config must contain 'preferences' and 'album_tag' sections")
+            raise ValueError(
+                "config must contain 'preferences' and 'album_tag' sections"
+            )
 
-        # Make sure order/prefix/suffix are mutable copies if present (avoid mutating caller state)
+        # Make sure order/prefix/suffix are mutable copies if present.
+        # This avoids mutating caller state.
         album_tag = dict(self.config.get("album_tag") or {})
         for key in ("order", "prefix", "suffix"):
             if key in album_tag and album_tag[key] is not None:
@@ -91,12 +97,9 @@ class TitleBuilder:
 
         # Optional heads-up if bitrate logic may fail later
         if not getattr(self.folder, "musicfiles", None):
-            self.log.debug("TitleBuilder: folder.musicfiles is empty; bitrate may be unavailable.")
-
-
-
-
-
+            self.log.debug(
+                "TitleBuilder: folder.musicfiles is empty; bitrate may be unavailable."
+            )
 
     @staticmethod
     def _normalize_show_date(raw: str, year_format: Optional[str]) -> str:
@@ -115,7 +118,9 @@ class TitleBuilder:
         return show_date
 
     @staticmethod
-    def _abbrev_type(rec_type: Optional[str], prefs: Mapping[str, Any]) -> Optional[str]:
+    def _abbrev_type(
+        rec_type: Optional[str], prefs: Mapping[str, Any]
+    ) -> Optional[str]:
         if not rec_type:
             return rec_type
         abbr_map = {
@@ -127,7 +132,9 @@ class TitleBuilder:
         return abbr_map.get(rec_type.lower()) or rec_type
 
     @staticmethod
-    def _bitrate_and_flag(info, include_bitrate: bool, not16_only: bool) -> tuple[str, bool]:
+    def _bitrate_and_flag(
+        info, include_bitrate: bool, not16_only: bool
+    ) -> tuple[str, bool]:
         """Return (bitrate_str, include_bitrate_final)."""
         br = f"{info.bits_per_sample}-{str(info.sample_rate).rstrip('0')}"
         if not16_only and str(info.bits_per_sample) == "16":
@@ -138,11 +145,15 @@ class TitleBuilder:
     def _prune(order, prefix, suffix, checks: Mapping[str, bool]) -> None:
         """Remove tokens from order/prefix/suffix when checks[name] is False."""
         remove = {k for k, keep in checks.items() if not keep}
-        triples = [(o, p, s) for o, p, s in zip(order, prefix, suffix) if o not in remove]
+        triples = [
+            (o, p, s) for o, p, s in zip(order, prefix, suffix) if o not in remove
+        ]
         if triples:
             order[:], prefix[:], suffix[:] = map(list, zip(*triples))
         else:
-            order[:]=[]; prefix[:]=[]; suffix[:]=[]
+            order[:] = []
+            prefix[:] = []
+            suffix[:] = []
 
     @staticmethod
     def _build_format(order, prefix, suffix) -> Optional[str]:
@@ -152,38 +163,54 @@ class TitleBuilder:
 
     def generate_title(self) -> str:
         prefs = self.config["preferences"]
-        tag   = self.config["album_tag"]
+        tag = self.config["album_tag"]
 
-        show_date      = self._normalize_show_date(self.etreerec.date, prefs.get("year_format"))
+        show_date = self._normalize_show_date(
+            self.etreerec.date, prefs.get("year_format")
+        )
         recording_type = self._abbrev_type(self.folder.recordingtype, prefs)
 
-        city, venue, shnid = self.etreerec.city, self.etreerec.etreevenue, self.etreerec.id
-        order  = (tag.get("order")  or []).copy()
+        city, venue, shnid = (
+            self.etreerec.city,
+            self.etreerec.etreevenue,
+            self.etreerec.id,
+        )
+        order = (tag.get("order") or []).copy()
         prefix = (tag.get("prefix") or []).copy()
         suffix = (tag.get("suffix") or []).copy()
 
         info = self.folder.musicfiles[0].audio.info  # assumes at least one file
         bitrate, include_bitrate = self._bitrate_and_flag(
-            info, tag.get("include_bitrate", True), tag.get("include_bitrate_not16_only", True)
+            info,
+            tag.get("include_bitrate", True),
+            tag.get("include_bitrate_not16_only", True),
         )
 
         checks = {
-            "venue":   tag.get("include_venue", True) and bool(venue),
-            "city":    tag.get("include_city", True) and bool(city),
-            "shnid":   tag.get("include_shnid", True),
+            "venue": tag.get("include_venue", True) and bool(venue),
+            "city": tag.get("include_city", True) and bool(city),
+            "shnid": tag.get("include_shnid", True),
             "bitrate": include_bitrate,
         }
         self._prune(order, prefix, suffix, checks)
 
         fmt = self._build_format(order, prefix, suffix)
-        ctx = {"venue": venue, "city": city, "shnid": shnid, "bitrate": bitrate,
-               "recording_type": recording_type, "show_date": show_date}
+        ctx = {
+            "venue": venue,
+            "city": city,
+            "shnid": shnid,
+            "bitrate": bitrate,
+            "recording_type": recording_type,
+            "show_date": show_date,
+        }
 
         if fmt:
             try:
                 return fmt.format_map(DefaultEmpty(ctx))
             except Exception as e:
-                logging.error(f"Error formatting album title. reverting to default. shnid={shnid}: {e}")
+                logging.error(
+                    f"Error formatting album title. reverting to default. shnid={shnid}: {e}"
+                )
 
         # Fallback
         album = f"{show_date} {venue} {city} "
@@ -196,14 +223,27 @@ class TitleBuilder:
 
 class DefaultEmpty(dict):
     """format_map() helper that returns '' for missing keys."""
+
     def __missing__(self, key):  # type: ignore[override]
         return ""
 
 
-
 TagWorker = Callable[
-    [str, str, Optional[str], bool, bool, str, Optional[str], str, str, Optional[int], Optional[int], Optional[str]],
-    Tuple[str, bool, Optional[str]]
+    [
+        str,
+        str,
+        Optional[str],
+        bool,
+        bool,
+        str,
+        Optional[str],
+        str,
+        str,
+        Optional[int],
+        Optional[int],
+        Optional[str],
+    ],
+    Tuple[str, bool, Optional[str]],
 ]
 
 
@@ -243,27 +283,34 @@ class FileTagger:
 
     # ---- public API ---------------------------------------------------------
 
-    def tag_all(self, clear_existing_tags: bool = True, num_threads: Optional[int] = None) -> None:
+    def tag_all(
+        self, clear_existing_tags: bool = True, num_threads: Optional[int] = None
+    ) -> None:
         album = self._compute_album_title()
         print(f"{album=}")
         self.log.info(f"Tagging {album} in {self.folderpath.as_posix()}")
 
         if not getattr(self.etreerec, "tracks", None):
-            msg = (f"ERROR: Unable to tag track names. No metadata found in {self.db_path} "
-                   f"for {self.folderpath.as_posix()}")
+            msg = (
+                f"ERROR: Unable to tag track names. No metadata found in {self.db_path} "
+                f"for {self.folderpath.as_posix()}"
+            )
             print(msg)
             self.log.error(msg)
 
         genretag = self._compute_genretag()
-        clear_existing_artwork = self.config.get("cover", {}).get("clear_existing_artwork", False)
-        retain_existing_artwork = self.config.get("cover", {}).get("retain_existing_artwork", True)
-
-        artwork_path_str = self._handle_artwork(clear_existing_artwork, retain_existing_artwork)
-
-        gazinta_abbrev = (
-            self.config.get("preferences", {}).get("segue_string")
-            or ">"
+        clear_existing_artwork = self.config.get("cover", {}).get(
+            "clear_existing_artwork", False
         )
+        retain_existing_artwork = self.config.get("cover", {}).get(
+            "retain_existing_artwork", True
+        )
+
+        artwork_path_str = self._handle_artwork(
+            clear_existing_artwork, retain_existing_artwork
+        )
+
+        gazinta_abbrev = self.config.get("preferences", {}).get("segue_string") or ">"
 
         args_list = self._build_args_list(
             album=album,
@@ -292,7 +339,10 @@ class FileTagger:
 
     def _compute_genretag(self) -> Optional[str]:
         """Example: tag GD shows by year as 'gdYYYY'. Extend/parametrize as needed."""
-        if getattr(self.etreerec, "date", None) and getattr(self.etreerec, "artist", "") == "Grateful Dead":
+        if (
+            getattr(self.etreerec, "date", None)
+            and getattr(self.etreerec, "artist", "") == "Grateful Dead"
+        ):
             if len(self.etreerec.date) > 4:
                 try:
                     # Use your existing extract_year if available; otherwise a tiny fallback
@@ -303,7 +353,9 @@ class FileTagger:
                     return f"gd{year}"
         return None
 
-    def _handle_artwork(self, clear_existing_artwork: bool, retain_existing_artwork: bool) -> Optional[str]:
+    def _handle_artwork(
+        self, clear_existing_artwork: bool, retain_existing_artwork: bool
+    ) -> Optional[str]:
         """
         Manage copying/retaining artwork in the target folder.
         Returns the path string to the artwork used (or None if none available).
@@ -357,12 +409,16 @@ class FileTagger:
         # Copy new artwork if needed
         try:
             if os.path.exists(dest_file):
-                self.log.info(f"{dest_file} already exists. Not replacing due to retention policy.")
+                self.log.info(
+                    f"{dest_file} already exists. Not replacing due to retention policy."
+                )
             else:
                 shutil.copy2(artwork_path_str, dest_file)
                 self.log.info(f"Copied new artwork to {dest_file}.")
         except FileNotFoundError as e:
-            self.log.error(f"Error copying artwork file {artwork_path_str} to {dest_file}: {e}")
+            self.log.error(
+                f"Error copying artwork file {artwork_path_str} to {dest_file}: {e}"
+            )
         return artwork_path_str
 
     def _build_args_list(
@@ -391,24 +447,28 @@ class FileTagger:
                 tracknum = getattr(song_info, "tracknum", None)
                 disc = getattr(song_info, "disc", None)
 
-            args_list.append((
-                mf.path,
-                mf.name,
-                artwork_path_str,
-                clear_existing_artwork,
-                clear_existing_tags,
-                album,
-                genretag,
-                self.etreerec.artist,
-                self.etreerec.source,
-                tracknum,
-                disc,
-                title,
-            ))
+            args_list.append(
+                (
+                    mf.path,
+                    mf.name,
+                    artwork_path_str,
+                    clear_existing_artwork,
+                    clear_existing_tags,
+                    album,
+                    genretag,
+                    self.etreerec.artist,
+                    self.etreerec.source,
+                    tracknum,
+                    disc,
+                    title,
+                )
+            )
 
         return args_list
 
-    def _run_threads(self, args_list: Sequence[tuple], num_threads: Optional[int]) -> None:
+    def _run_threads(
+        self, args_list: Sequence[tuple], num_threads: Optional[int]
+    ) -> None:
         if num_threads is None:
             cpu_count = os.cpu_count() or 1
             num_threads = max(1, cpu_count - 1)
@@ -423,9 +483,13 @@ class FileTagger:
                     try:
                         name, success, error = fut.result()
                         if not success:
-                            self.log.error(f"Tagging failed for {name or file_name}: {error}")
+                            self.log.error(
+                                f"Tagging failed for {name or file_name}: {error}"
+                            )
                     except Exception as e:
-                        self.log.error(f"Multithreaded worker exception: {e}; File: {file_name}")
+                        self.log.error(
+                            f"Multithreaded worker exception: {e}; File: {file_name}"
+                        )
         finally:
             pbar.close()
 
