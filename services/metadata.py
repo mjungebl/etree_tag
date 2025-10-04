@@ -7,6 +7,7 @@ from mutagen.flac import FLAC
 
 from InfoFileTagger_class import FlacInfoFileTagger
 from recordingfiles import RecordingFolder
+from services.persistence import TrackMetadataRepository
 
 TrackMapping = Dict[str, Tuple[int, str, str]]
 
@@ -17,6 +18,7 @@ class MetadataImporter:
     def __init__(
         self,
         info_tagger: Optional[FlacInfoFileTagger] = None,
+        repository: Optional[TrackMetadataRepository] = None,
         logger: Optional[logging.Logger] = None,
     ) -> None:
         self.log = logger or logging.getLogger("MetadataImporter")
@@ -27,6 +29,7 @@ class MetadataImporter:
                 also_log_to_console=False,
             )
         self.info_tagger = info_tagger
+        self.repository = repository
 
     # Public API ---------------------------------------------------------
     def import_metadata(self, tagger) -> bool:
@@ -74,11 +77,15 @@ class MetadataImporter:
             )
             return False
 
+        repository = self.repository or getattr(tagger, "repository", None)
+        if repository is None:
+            self.log.error("No metadata repository available; cannot persist results for %s", directory)
+            return False
+
         try:
-            tagger.db.insert_track_metadata(
+            repository.overwrite_tracks(
                 tagger.etreerec.id,
                 records,
-                overwrite=True,
                 md5key=tagger.etreerec.md5key,
             )
             if hasattr(tagger.etreerec, "_tracks"):

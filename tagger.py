@@ -18,6 +18,7 @@ from typing import Optional
 # import InfoFileTagger
 from tagger_utils import TitleBuilder
 from services.metadata import MetadataImporter
+from services.persistence import TrackMetadataRepository
 from services.tagging import tag_file_worker, tag_artwork_worker
 
 """
@@ -160,7 +161,8 @@ class ConcertTagger:
             raise ValueError(f"{concert_folder} is not a valid directory.")
         self.folder = RecordingFolder(concert_folder, db)
         self.db = db
-        self.metadata_importer = MetadataImporter()
+        self.repository = TrackMetadataRepository(db)
+        self.metadata_importer = MetadataImporter(repository=self.repository)
         self.NoMatch = False
         try:
             self.etreerec = self.folder._find_matching_recording(debug=debug)
@@ -428,7 +430,7 @@ class ConcertTagger:
         if not self.etreerec.tracks:
             logging.warning(
                 "No track metadata found in %s for %s. Attempting to parse the info file.",
-                self.db.db_path,
+                self.repository.db_path,
                 self.folderpath.as_posix(),
             )
             if self.metadata_importer.import_metadata(self):
@@ -438,10 +440,10 @@ class ConcertTagger:
                 )
             else:
                 print(
-                    f"ERROR: Unable to tag track names. No Metadata found in {self.db.db_path} for {self.folderpath.as_posix()}"
+                    f"ERROR: Unable to tag track names. No Metadata found in {self.repository.db_path} for {self.folderpath.as_posix()}"
                 )
                 logging.error(
-                    f"No track metadata found in {self.db.db_path} for: {self.folderpath.as_posix()}"
+                    f"No track metadata found in {self.repository.db_path} for: {self.folderpath.as_posix()}"
                 )
         logging.info(f"Tagging {album} in {self.folderpath.as_posix()}")
 
