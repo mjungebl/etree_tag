@@ -19,7 +19,7 @@ from typing import Optional, Tuple
 # import InfoFileTagger
 from tagger_utils import TitleBuilder
 from services.artwork import apply_artwork_to_audio
-from services.metadata import import_metadata_from_info_file
+from services.metadata import MetadataImporter
 
 """
 This script provides functionality for tagging FLAC files with metadata and artwork using multithreading. 
@@ -251,6 +251,7 @@ class ConcertTagger:
             raise ValueError(f"{concert_folder} is not a valid directory.")
         self.folder = RecordingFolder(concert_folder, db)
         self.db = db
+        self.metadata_importer = MetadataImporter()
         self.NoMatch = False
         try:
             self.etreerec = self.folder._find_matching_recording(debug=debug)
@@ -521,9 +522,9 @@ class ConcertTagger:
                 self.db.db_path,
                 self.folderpath.as_posix(),
             )
-            if import_metadata_from_info_file(self):
+            if self.metadata_importer.import_metadata(self):
                 logging.info(
-                    "Successfully derived track metadata from the info file for %s.",
+                    "Successfully derived track metadata from local files for %s.",
                     self.folderpath.as_posix(),
                 )
             else:
