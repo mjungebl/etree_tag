@@ -1,0 +1,159 @@
+import logging
+import re
+from pathlib import Path
+from typing import Dict, Tuple
+
+from mutagen.flac import FLAC
+
+from InfoFileTagger_class import FlacInfoFileTagger
+from recordingfiles import RecordingFolder
+
+
+TrackMapping = Dict[str, Tuple[int, str, str]]
+
+
+def import_metadata_from_info_file(tagger) -> bool:
+    """Populate track metadata for the supplied ConcertTagger instance."""
+    directory = tagger.folderpath.as_posix()
+
+    try:
+        info_tagger = FlacInfoFileTagger(
+            logger=logging.getLogger("FlacInfoFileTagger"),
+            also_log_to_console=False,
+        )
+    except Exception as exc:
+        logging.error("Failed to initialize FlacInfoFileTagger: %s", exc)
+        return False
+
+    try:
+        tagged = info_tagger.tag_folder(directory, clear_song_tags=False)
+    except Exception as exc:
+        logging.error(
+            "Info file tagging raised an exception for %s: %s",
+            directory,
+            exc,
+        )
+        tagged = False
+
+    if not tagged:
+        logging.warning(
+            "Info file tagging did not succeed for %s; applying filename fallback.",
+            directory,
+        )
+        fallback_mapping = _derive_mapping_from_filenames(info_tagger, tagger)
+        if not fallback_mapping:
+            logging.error(
+                "Unable to derive track metadata from info file or filenames for %s.",
+                directory,
+            )
+            return False
+        if not _apply_track_mapping(fallback_mapping):
+            logging.error(
+                "Applying fallback track metadata failed for %s.",
+                directory,
+            )
+            return False
+    else:
+        logging.info("Info file tagging reported success for %s", directory)
+
+    # Refresh folder metadata to reflect newly written tags.
+    tagger.folder = RecordingFolder(directory, tagger.db)
+    records = tagger.build_show_inserts()
+    if not records or any(rec[2] in (None, "") for rec in records):
+        logging.error(
+            "Generated records still missing track numbers for %s.",
+            directory,
+        )
+        return False
+
+    try:
+        tagger.db.insert_track_metadata(
+            tagger.etreerec.id,
+            records,
+            overwrite=True,
+            md5key=tagger.etreerec.md5key,
+        )
+        if hasattr(tagger.etreerec, "_tracks"):
+            tagger.etreerec._tracks = None
+        logging.info(
+            "Imported track metadata for shnid %s from local files.",
+            tagger.etreerec.id,
+        )
+        return True
+    except Exception as exc:
+        logging.error(
+            "Failed to persist info-file metadata for shnid %s: %s",
+            tagger.etreerec.id,
+            exc,
+        )
+        return False
+
+
+def _apply_track_mapping(mapping: TrackMapping) -> bool:
+    """Apply the supplied mapping directly to the FLAC files."""
+    for flac_path, (disc, track, title) in mapping.items():
+        try:
+            audio = FLAC(flac_path)
+        except Exception as exc:
+            logging.error("Unable to load FLAC %s: %s", flac_path, exc)
+            return False
+
+        audio["tracknumber"] = track
+        audio["discnumber"] = str(disc)
+        audio["title"] = title
+        try:
+            audio.save()
+        except Exception as exc:
+            logging.error("Saving updated tags failed for %s: %s", flac_path, exc)
+            return False
+    return True
+
+
+def _derive_mapping_from_filenames(
+    info_tagger: FlacInfoFileTagger, tagger
+) -> TrackMapping:
+    """Create a best-effort mapping using FLAC filenames when parsing fails."""
+    files = sorted(tagger.folder.musicfiles, key=lambda mf: mf.name)
+    mapping: TrackMapping = {}
+    disc = 1
+    seq = 1
+    pattern = re.compile(
+        r"^(?:d(?P<disc>\d+)[_-]?)?(?:t(?P<ttrack>\d+)[_-]?)?(?P<num>\d+)?[\s._-]*(?P<title>.*)$",
+        re.IGNORECASE,
+    )
+
+    for music_file in files:
+        stem = Path(music_file.name).stem
+        match = pattern.match(stem)
+        if match:
+            disc_str = match.group("disc")
+            ttrack = match.group("ttrack")
+            num = match.group("num")
+            raw_title = match.group("title")
+
+            disc_val = int(disc_str) if disc_str else disc
+            if ttrack:
+                track_val = int(ttrack)
+            elif num:
+                if len(num) > 2:
+                    disc_val = int(num[0])
+                    track_val = int(num[1:])
+                else:
+                    track_val = int(num)
+            else:
+                track_val = seq
+
+            title = raw_title or stem
+        else:
+            disc_val = disc
+            track_val = seq
+            title = stem
+
+        title_clean = info_tagger.clean_track_name(title.strip())
+        mapping[music_file.path] = (disc_val, f"{track_val:02d}", title_clean)
+
+        if track_val == 1 and seq != 1:
+            disc = disc_val
+        seq += 1
+
+    return mapping

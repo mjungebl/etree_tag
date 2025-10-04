@@ -4,7 +4,7 @@ from sqliteetreedb import SQLiteEtreeDB
 from InfoFileTagger_class import FlacInfoFileTagger
 import logging
 import tomllib
-from mutagen.flac import Picture, FLAC
+from mutagen.flac import FLAC
 import os
 from tqdm import tqdm
 
@@ -18,6 +18,8 @@ from typing import Optional, Tuple
 
 # import InfoFileTagger
 from tagger_utils import TitleBuilder
+from services.artwork import apply_artwork_to_audio
+from services.metadata import import_metadata_from_info_file
 
 """
 This script provides functionality for tagging FLAC files with metadata and artwork using multithreading. 
@@ -133,54 +135,6 @@ def remove_match_from_lists(lists, item):
     return lists
 
 
-def _guess_artwork_mime_type(artwork_path: str) -> str:
-    """Return the mime type for the artwork based on its file extension."""
-    ext = os.path.splitext(artwork_path)[1].lower()
-    return {
-        ".jpg": "image/jpeg",
-        ".jpeg": "image/jpeg",
-        ".png": "image/png",
-        ".gif": "image/gif",
-        ".bmp": "image/bmp",
-        ".webp": "image/webp",
-    }.get(ext, "image/jpeg")
-
-
-def _apply_artwork_to_audio(
-    audio: FLAC,
-    file_name: str,
-    artwork_path: Optional[str],
-    clear_existing: bool,
-) -> Tuple[bool, Optional[str]]:
-    """Attach artwork to a FLAC audio object if possible."""
-    if not artwork_path:
-        logging.info("No artwork file found to tag.")
-        return False, None
-
-    try:
-        with open(artwork_path, "rb") as f:
-            image_data = f.read()
-    except Exception as e:
-        logging.error(f"Error reading artwork file {artwork_path}: {e}")
-        return False, str(e)
-
-    if clear_existing and audio.pictures:
-        audio.clear_pictures()
-        logging.info(f"Cleared artwork from file: {file_name}")
-
-    if not audio.pictures:
-        pic = Picture()
-        pic.type = 3
-        pic.mime = _guess_artwork_mime_type(artwork_path)
-        pic.data = image_data
-        audio.add_picture(pic)
-        logging.info(f"Added artwork to file: {file_name}")
-        return True, None
-
-    logging.info(f"Artwork already exists in file: {file_name}")
-    return False, None
-
-
 def _tag_file_thread(args):
     """
     Worker function to add artwork and metadata to a single FLAC file using threads.
@@ -207,7 +161,7 @@ def _tag_file_thread(args):
     ) = args
     try:
         audio = FLAC(file_path)
-        _apply_artwork_to_audio(audio, file_name, artwork_path, clear_existing_artwork)
+        apply_artwork_to_audio(audio, file_name, artwork_path, clear_existing_artwork)
 
         if clear_existing_tags:
             for key in list(audio.keys()):
@@ -259,7 +213,7 @@ def _tag_artwork_for_file_thread(args):
     file_path, file_name, artwork_path, clear_existing = args
     try:
         audio = FLAC(file_path)
-        artwork_changed, error = _apply_artwork_to_audio(
+        artwork_changed, error = apply_artwork_to_audio(
             audio, file_name, artwork_path, clear_existing
         )
         if error:
@@ -487,149 +441,6 @@ class ConcertTagger:
 
 
 
-    def _import_metadata_from_info_file(self) -> bool:
-        """Try to populate track metadata by parsing the folder's info file."""
-        directory = self.folderpath.as_posix()
-
-        try:
-            info_tagger = FlacInfoFileTagger(
-                logger=logging.getLogger("FlacInfoFileTagger"),
-                also_log_to_console=False,
-            )
-        except Exception as exc:
-            logging.error("Failed to initialize FlacInfoFileTagger: %s", exc)
-            return False
-
-        try:
-            tagged = info_tagger.tag_folder(directory, clear_song_tags=False)
-        except Exception as exc:
-            logging.error(
-                "Info file tagging raised an exception for %s: %s",
-                directory,
-                exc,
-            )
-            tagged = False
-
-        if not tagged:
-            logging.warning(
-                "Info file tagging did not succeed for %s; applying filename fallback.",
-                directory,
-            )
-            fallback_mapping = self._derive_mapping_from_filenames(info_tagger)
-            if not fallback_mapping:
-                logging.error(
-                    "Unable to derive track metadata from info file or filenames for %s.",
-                    directory,
-                )
-                return False
-            if not self._apply_track_mapping(fallback_mapping):
-                logging.error(
-                    "Applying fallback track metadata failed for %s.",
-                    directory,
-                )
-                return False
-        else:
-            logging.info("Info file tagging reported success for %s", directory)
-
-        self.folder = RecordingFolder(directory, self.db)
-        records = self.build_show_inserts()
-        if not records or any(rec[2] in (None, "") for rec in records):
-            logging.error(
-                "Generated records still missing track numbers for %s.",
-                directory,
-            )
-            return False
-
-        try:
-            self.db.insert_track_metadata(
-                self.etreerec.id,
-                records,
-                overwrite=True,
-                md5key=self.etreerec.md5key,
-            )
-            if hasattr(self.etreerec, "_tracks"):
-                self.etreerec._tracks = None
-            logging.info(
-                "Imported track metadata for shnid %s from local files.",
-                self.etreerec.id,
-            )
-            return True
-        except Exception as exc:
-            logging.error(
-                "Failed to persist info-file metadata for shnid %s: %s",
-                self.etreerec.id,
-                exc,
-            )
-            return False
-
-    def _apply_track_mapping(self, mapping: dict[str, tuple[int, str, str]]) -> bool:
-        """Apply the supplied mapping directly to the FLAC files."""
-        for flac_path, (disc, track, title) in mapping.items():
-            try:
-                audio = FLAC(flac_path)
-            except Exception as exc:
-                logging.error("Unable to load FLAC %s: %s", flac_path, exc)
-                return False
-
-            audio["tracknumber"] = track
-            audio["discnumber"] = str(disc)
-            audio["title"] = title
-            try:
-                audio.save()
-            except Exception as exc:
-                logging.error("Saving updated tags failed for %s: %s", flac_path, exc)
-                return False
-        return True
-
-    def _derive_mapping_from_filenames(
-        self, info_tagger: FlacInfoFileTagger
-    ) -> dict[str, tuple[int, str, str]]:
-        """Create a best-effort mapping using FLAC filenames when parsing fails."""
-        files = sorted(self.folder.musicfiles, key=lambda mf: mf.name)
-        mapping: dict[str, tuple[int, str, str]] = {}
-        disc = 1
-        seq = 1
-        pattern = re.compile(
-            r"^(?:d(?P<disc>\d+)[_-]?)?(?:t(?P<ttrack>\d+)[_-]?)?(?P<num>\d+)?[\s._-]*(?P<title>.*)$",
-            re.IGNORECASE,
-        )
-
-        for music_file in files:
-            stem = Path(music_file.name).stem
-            match = pattern.match(stem)
-            if match:
-                disc_str = match.group("disc")
-                ttrack = match.group("ttrack")
-                num = match.group("num")
-                raw_title = match.group("title")
-
-                disc_val = int(disc_str) if disc_str else disc
-                if ttrack:
-                    track_val = int(ttrack)
-                elif num:
-                    if len(num) > 2:
-                        disc_val = int(num[0])
-                        track_val = int(num[1:])
-                    else:
-                        track_val = int(num)
-                else:
-                    track_val = seq
-
-                title = raw_title or stem
-            else:
-                disc_val = disc
-                track_val = seq
-                title = stem
-
-            title_clean = info_tagger.clean_track_name(title.strip())
-            mapping[music_file.path] = (disc_val, f"{track_val:02d}", title_clean)
-
-            if track_val == 1 and seq != 1:
-                disc = disc_val
-            seq += 1
-
-        return mapping
-
     def tag_artwork(self, num_threads: int = None):
         """
         Add artwork to FLAC files and copy it to the folder with retention preferences.
@@ -710,7 +521,7 @@ class ConcertTagger:
                 self.db.db_path,
                 self.folderpath.as_posix(),
             )
-            if self._import_metadata_from_info_file():
+            if import_metadata_from_info_file(self):
                 logging.info(
                     "Successfully derived track metadata from the info file for %s.",
                     self.folderpath.as_posix(),
