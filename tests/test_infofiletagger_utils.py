@@ -1,7 +1,12 @@
 import types
 import sys
 from pathlib import Path
-
+from InfoFileTagger import (
+    is_valid_date,
+    file_sort_key,
+    strip_after_n_spaces,
+    clean_track_name,
+)
 # ensure project root is on path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -14,12 +19,7 @@ mutagen.flac = flac_mod
 sys.modules.setdefault("mutagen", mutagen)
 sys.modules.setdefault("mutagen.flac", flac_mod)
 
-from InfoFileTagger import (
-    is_valid_date,
-    file_sort_key,
-    strip_after_n_spaces,
-    clean_track_name,
-)
+
 
 
 def test_is_valid_date_true():

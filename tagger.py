@@ -1,10 +1,9 @@
 from pathlib import Path
 from recordingfiles import RecordingFolder
 from sqliteetreedb import SQLiteEtreeDB
-from InfoFileTagger_class import FlacInfoFileTagger
+#from InfoFileTagger_class import FlacInfoFileTagger
 import logging
 import tomllib
-from mutagen.flac import FLAC
 import os
 from tqdm import tqdm
 
@@ -14,12 +13,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import shutil
 import re
 from datetime import datetime
-from typing import Optional, Tuple
+from typing import Optional
 
 # import InfoFileTagger
 from tagger_utils import TitleBuilder
-from services.artwork import apply_artwork_to_audio
 from services.metadata import MetadataImporter
+from services.tagging import tag_file_worker, tag_artwork_worker
 
 """
 This script provides functionality for tagging FLAC files with metadata and artwork using multithreading. 
@@ -28,9 +27,9 @@ Classes:
     ConcertTagger: A class to handle tagging of concert recordings with metadata and artwork.
 Functions:
     load_config(config_path: str) -> dict:
-    _tag_file_thread(args):
+    tag_file_worker(args):
         Worker function to add artwork and metadata to a single FLAC file using threads.
-    _tag_artwork_for_file_thread(args):
+    tag_artwork_worker(args):
     ConcertTagger.__init__(self, concert_folder: str, config: dict, db: SQLiteEtreeDB):
     ConcertTagger._find_artwork(self, artist_abbr: str, concert_date: str):
     ConcertTagger.tag_artwork(self, clear_existing: bool = False, num_threads: int = None):
@@ -135,98 +134,8 @@ def remove_match_from_lists(lists, item):
     return lists
 
 
-def _tag_file_thread(args):
-    """
-    Worker function to add artwork and metadata to a single FLAC file using threads.
-
-    Args:
-        args (tuple): Contains path, logging name, artwork path, clear flags, and metadata values.
-
-    Returns:
-        tuple: (file_name, success (bool), error (str or None))
-    """
-    (
-        file_path,
-        file_name,
-        artwork_path,
-        clear_existing_artwork,
-        clear_existing_tags,
-        album,
-        genretag,
-        artist,
-        source,
-        tracknum,
-        disc,
-        title,
-    ) = args
-    try:
-        audio = FLAC(file_path)
-        apply_artwork_to_audio(audio, file_name, artwork_path, clear_existing_artwork)
-
-        if clear_existing_tags:
-            for key in list(audio.keys()):
-                if key.lower() == "metadata_block_picture":
-                    continue
-                del audio[key]
-            logging.info(f"Cleared tags from file: {file_name}")
-
-        audio["album"] = album
-        audio["artist"] = artist
-        audio["albumartist"] = artist
-        if "album artist" in audio:
-            del audio["album artist"]
-        audio["comment"] = source
-        if genretag:
-            audio["genre"] = genretag
-
-        if title:
-            audio["title"] = title
-            if disc:
-                audio["discnumber"] = disc
-            if tracknum:
-                audio["tracknumber"] = tracknum
-        else:
-            logging.error(
-                f"Error tagging song details {file_path}: No matching track data found in database"
-            )
-        audio.save()
-        return (file_name, True, None)
-    except Exception as e:
-        logging.error(f"Error tagging file {file_name}: {e}")
-        return (file_name, False, str(e))
-
-
-def _tag_artwork_for_file_thread(args):
-    """
-    Worker function to add artwork to a single FLAC file using threads.
-
-    Args:
-        args (tuple): Contains:
-          - file_path (str): Full path to the FLAC file.
-          - file_name (str): File name (for logging).
-          - artwork_path (str): Full path to the artwork image.
-          - clear_existing (bool): If True, clear any existing artwork before adding.
-
-    Returns:
-        tuple: (file_name, success (bool), error (str or None))
-    """
-    file_path, file_name, artwork_path, clear_existing = args
-    try:
-        audio = FLAC(file_path)
-        artwork_changed, error = apply_artwork_to_audio(
-            audio, file_name, artwork_path, clear_existing
-        )
-        if error:
-            return (file_name, False, error)
-        if artwork_changed:
-            audio.save()
-        return (file_name, True, None)
-    except Exception as e:
-        logging.error(f"Error tagging file {file_name}: {e}")
-        return (file_name, False, str(e))
-
-
 class ConcertTagger:
+
     def __init__(
         self, concert_folder: str, config: dict, db: SQLiteEtreeDB, debug: bool = False
     ):
@@ -485,7 +394,7 @@ class ConcertTagger:
 
         with ThreadPoolExecutor(max_workers=num_threads) as executor:
             futures = {
-                executor.submit(_tag_artwork_for_file_thread, args): args[1]
+                executor.submit(tag_artwork_worker, args): args[1]
                 for args in args_list
             }
             for future in as_completed(futures):
@@ -500,7 +409,7 @@ class ConcertTagger:
                 except Exception as e:
                     error = str(e)
                     logging.error(
-                        f"Multithreaded _tag_artwork_for_file_thread call: {e} File: {file_name}"
+                        f"Multithreaded tag_artwork_worker call: {e} File: {file_name}"
                     )
         pbar.close()
 
@@ -592,7 +501,7 @@ class ConcertTagger:
         pbar = tqdm(total=tickers, desc="Tagging")
         with ThreadPoolExecutor(max_workers=num_threads) as executor:
             futures = {
-                executor.submit(_tag_file_thread, args): args[1] for args in args_list
+                executor.submit(tag_file_worker, args): args[1] for args in args_list
             }
             for future in as_completed(futures):
                 file_name = futures[future]
@@ -601,7 +510,7 @@ class ConcertTagger:
                     name, success, error = future.result()
                 except Exception as e:
                     logging.error(
-                        f"Multithreaded _tag_file_thread call: {e}, File: {file_name}"
+                        f"Multithreaded tag_file_worker call: {e}, File: {file_name}"
                     )
         pbar.close()
 

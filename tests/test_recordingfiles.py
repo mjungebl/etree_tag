@@ -1,6 +1,8 @@
 import types
 import sys
 from pathlib import Path
+import recordingfiles
+from recordingfiles import RecordingFolder
 
 # ensure project root is on path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -35,8 +37,7 @@ mutagen.flac = flac_mod
 sys.modules.setdefault("mutagen", mutagen)
 sys.modules.setdefault("mutagen.flac", flac_mod)
 
-import recordingfiles
-from recordingfiles import RecordingFolder
+
 
 
 def _create_sample_files(base: Path, info_name="info.txt"):

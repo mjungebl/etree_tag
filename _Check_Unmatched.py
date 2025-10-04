@@ -4,7 +4,7 @@ from pathlib import Path
 import os
 import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
+from threading import Lock
 
 def write_list_to_file(lst, file_name):
     """
@@ -100,7 +100,7 @@ def move_folders_concurrently(folder_paths, destination_dir, max_workers=4):
 
 
 ##############################################################################################
-from threading import Lock
+
 
 # Assume these are defined elsewhere:
 # concert_folders: a list of folder paths to process.

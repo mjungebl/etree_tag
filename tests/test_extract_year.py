@@ -1,7 +1,7 @@
 import sys
 import types
 from pathlib import Path
-
+from tagger import extract_year
 # ensure project root is on path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -17,7 +17,7 @@ tqdm_mod = types.ModuleType("tqdm")
 tqdm_mod.tqdm = lambda x=None, **k: x
 sys.modules.setdefault("tqdm", tqdm_mod)
 
-from tagger import extract_year
+
 
 
 def test_extract_year_iso():
