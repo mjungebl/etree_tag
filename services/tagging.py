@@ -5,6 +5,8 @@ from mutagen.flac import FLAC
 
 from services.artwork import apply_artwork_to_audio
 
+logger = logging.getLogger(__name__)
+
 
 WorkerResult = Tuple[str, bool, Optional[str]]
 
@@ -35,7 +37,7 @@ def tag_file_worker(args) -> WorkerResult:
                 if key.lower() == "metadata_block_picture":
                     continue
                 del audio[key]
-            logging.info("Cleared tags from file: %s", file_name)
+            logger.debug("Cleared tags from file: %s", file_name)
 
         audio["album"] = album
         audio["artist"] = artist
@@ -53,14 +55,14 @@ def tag_file_worker(args) -> WorkerResult:
             if tracknum:
                 audio["tracknumber"] = tracknum
         else:
-            logging.error(
+            logger.error(
                 "Error tagging song details %s: No matching track data found in database",
                 file_path,
             )
         audio.save()
         return (file_name, True, None)
     except Exception as exc:  # pragma: no cover - worker failure path
-        logging.error("Error tagging file %s: %s", file_name, exc)
+        logger.error("Error tagging file %s: %s", file_name, exc)
         return (file_name, False, str(exc))
 
 
@@ -78,5 +80,5 @@ def tag_artwork_worker(args) -> WorkerResult:
             audio.save()
         return (file_name, True, None)
     except Exception as exc:  # pragma: no cover - worker failure path
-        logging.error("Error tagging file %s: %s", file_name, exc)
+        logger.error("Error tagging file %s: %s", file_name, exc)
         return (file_name, False, str(exc))

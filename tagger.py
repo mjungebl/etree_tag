@@ -15,12 +15,19 @@ from datetime import datetime
 from typing import Optional
 
 from services.config import AppConfig, load_app_config
+from services.exceptions import (
+    ConfigurationError,
+    FolderProcessingError,
+    TaggerError,
+)
 
 # import InfoFileTagger
 from tagger_utils import TitleBuilder
 from services.metadata import MetadataImporter
 from services.persistence import TrackMetadataRepository
 from services.tagging import tag_file_worker, tag_artwork_worker
+
+logger = logging.getLogger(__name__)
 
 """
 This script provides functionality for tagging FLAC files with metadata and artwork using multithreading. 
@@ -58,9 +65,9 @@ def load_config(config_path: str) -> AppConfig:
     """Load configuration into a structured AppConfig dataclass."""
     try:
         return load_app_config(config_path)
-    except Exception as e:
-        print(f"Error loading configuration: {e}")
-        raise
+    except Exception as exc:  # pragma: no cover - configuration errors are user-driven
+        logger.error("Failed to load configuration from %s: %s", config_path, exc)
+        raise ConfigurationError(f"Failed to load configuration from {config_path}") from exc
 
 
 def extract_year(date_str):
@@ -156,8 +163,11 @@ class ConcertTagger:
         self.NoMatch = False
         try:
             self.etreerec = self.folder._find_matching_recording(debug=debug)
-        except Exception as e:
-            print(f"Error in ConcertTagger Init _find_matching_recording {e}")
+        except Exception as exc:
+            logger.exception(
+                "Error locating matching recording for %s",
+                self.folderpath.as_posix(),
+            )
             self.NoMatch = True
 
         if not self.etreerec:
@@ -169,7 +179,7 @@ class ConcertTagger:
                 self.folder._standardize_folder_year(self.etreerec)
                 self.folderpath = self.folder.folder
             except Exception as e:
-                logging.error(f"_standardize_folder_year failed: {e}")
+                logger.error("_standardize_folder_year failed: %s", e)
         # Store configuration for artwork search. ``artwork_folders`` maps
         # artist abbreviations to lists of directories. If an abbreviation is
         # not present, no artwork search will be performed for that artist.
@@ -195,37 +205,39 @@ class ConcertTagger:
                             self.etreerec.date,
                         )
                     except FileNotFoundError as fnf_err:
-                        logging.error(str(fnf_err))
+                        logger.error("Artwork lookup failed: %s", fnf_err)
                         raise
                     if not self.artworkpath and not (
                         self.artwork_folders
                         or self.default_images_map.get(self.etreerec.artist_abbrev)
                     ):
-                        logging.info(
-                            f"No artwork directories configured for artist {self.etreerec.artist_abbrev}"
+                        logger.info(
+                            "No artwork directories configured for artist %s",
+                            self.etreerec.artist_abbrev,
                         )
                     elif not self.artworkpath:
                         raise FileNotFoundError(
                             f"No artwork found for {self.etreerec.artist_abbrev} on {self.etreerec.date}"
                         )
             except FileNotFoundError as e:
-                logging.error(str(e))
+                logger.error("Artwork search failed: %s", e)
                 raise
-            except Exception as e:
-                logging.error(
-                    f"Exception: {e} in _find_artwork for {self.folderpath.as_posix()}"
+            except Exception as exc:
+                logger.exception(
+                    "Unexpected error while locating artwork for %s",
+                    self.folderpath.as_posix(),
                 )
-                print(
-                    f"Exception: {e} in _find_artwork for {self.folderpath.as_posix()}"
+                self.errormsg = (
+                    f"No Matching recording found in database for folder {self.folderpath.as_posix()}"
                 )
-                self.errormsg = f"No Matching recording found in database for folder {self.folderpath.as_posix()}"
-                raise Exception(
-                    f"{e} in _find_artwork for {self.folderpath.as_posix()}"
-                )
+                raise TaggerError(
+                    f"{exc} in _find_artwork for {self.folderpath.as_posix()}"
+                ) from exc
 
         else:
-            logging.error(
-                f"No Matching recording found in database for folder {self.folderpath.as_posix()}"
+            logger.error(
+                "No Matching recording found in database for folder %s",
+                self.folderpath.as_posix(),
             )
             self.errormsg = f"No Matching recording found in database for folder {self.folderpath.as_posix()}"
         # ... (other initializations such as finding FLAC files and auxiliary files)
@@ -287,7 +299,7 @@ class ConcertTagger:
     ) -> Optional[str]:
         """Prepare folder artwork and return the image path to use during tagging."""
         if not self.artworkpath:
-            logging.warning("No artwork file found to tag.")
+            logger.debug("No artwork file found to tag.")
             return None
 
         artwork_path_str = str(self.artworkpath)
@@ -302,10 +314,11 @@ class ConcertTagger:
         ]
 
         if existing_artworks:
-            logging.info(f"Existing artwork files found: {existing_artworks}")
+            logger.debug("Existing artwork files found: %s", existing_artworks)
             if not clear_existing_artwork:
-                logging.info(
-                    f"Existing artwork found ({existing_artworks}), and replacement is disabled. Skipping new artwork."
+                logger.debug(
+                    "Existing artwork found (%s), and replacement is disabled. Skipping new artwork.",
+                    existing_artworks,
                 )
                 return existing_artworks[0]
 
@@ -313,10 +326,10 @@ class ConcertTagger:
                 if retain_existing_artwork:
                     backup_name = f"{existing_artwork}.old"
                     os.rename(existing_artwork, backup_name)
-                    logging.info(f"Renamed {existing_artwork} to {backup_name}")
+                    logger.debug("Renamed %s to %s", existing_artwork, backup_name)
                 else:
                     os.remove(existing_artwork)
-                    logging.info(f"Deleted existing artwork {existing_artwork}")
+                    logger.debug("Deleted existing artwork %s", existing_artwork)
             dest_ext = os.path.splitext(existing_artworks[0])[1].lower()
         else:
             dest_ext = artwork_ext
@@ -324,15 +337,19 @@ class ConcertTagger:
         dest_file = os.path.join(folder_path_str, f"folder{dest_ext}")
         try:
             if os.path.exists(dest_file) and not clear_existing_artwork:
-                logging.info(
-                    f"{dest_file} already exists. Not replacing due to retention policy."
+                logger.debug(
+                    "%s already exists. Not replacing due to retention policy.",
+                    dest_file,
                 )
             elif not os.path.exists(dest_file):
                 shutil.copy2(artwork_path_str, dest_file)
-                logging.info(f"Copied new artwork to {dest_file}.")
+                logger.info("Copied new artwork to %s.", dest_file)
         except FileNotFoundError as e:
-            logging.error(
-                f"Error copying artwork file {artwork_path_str} to {dest_file}: {e}"
+            logger.error(
+                "Error copying artwork file %s to %s: %s",
+                artwork_path_str,
+                dest_file,
+                e,
             )
             return None
 
@@ -391,13 +408,14 @@ class ConcertTagger:
                 try:
                     name, success, error = future.result()
                     if not success:
-                        logging.error(
+                        logger.error(
                             f"Error tagging artwork for {name}: {error or 'Unknown error'}"
                         )
-                except Exception as e:
-                    error = str(e)
-                    logging.error(
-                        f"Multithreaded tag_artwork_worker call: {e} File: {file_name}"
+                except Exception as exc:  # pragma: no cover - worker failure path
+                    error = str(exc)
+                    logger.exception(
+                        "Multithreaded tag_artwork_worker call failed for %s",
+                        file_name,
                     )
         pbar.close()
 
@@ -412,26 +430,23 @@ class ConcertTagger:
 
         tb = TitleBuilder(self.etreerec, self.folder, self.config.to_mapping())
         album = tb.generate_title()
-        print(f"{album=}")
+        logger.debug("Album title resolved as %s", album)
         if not self.etreerec.tracks:
-            logging.warning(
+            logger.warning(
                 "No track metadata found in %s for %s. Attempting to parse the info file.",
                 self.repository.db_path,
                 self.folderpath.as_posix(),
             )
-            if self.metadata_importer.import_metadata(self):
-                logging.info(
-                    "Successfully derived track metadata from local files for %s.",
-                    self.folderpath.as_posix(),
-                )
-            else:
-                print(
-                    f"ERROR: Unable to tag track names. No Metadata found in {self.repository.db_path} for {self.folderpath.as_posix()}"
-                )
-                logging.error(
-                    f"No track metadata found in {self.repository.db_path} for: {self.folderpath.as_posix()}"
-                )
-        logging.info(f"Tagging {album} in {self.folderpath.as_posix()}")
+            self.metadata_importer.import_metadata(self)
+            logger.info(
+                "Successfully derived track metadata from local files for %s.",
+                self.folderpath.as_posix(),
+            )
+        logger.info(
+            "Tagging %s in %s",
+            album,
+            self.folderpath.as_posix(),
+        )
 
         genretag = None
         if self.etreerec.date:
@@ -490,9 +505,10 @@ class ConcertTagger:
                 pbar.update(n=1)
                 try:
                     name, success, error = future.result()
-                except Exception as e:
-                    logging.error(
-                        f"Multithreaded tag_file_worker call: {e}, File: {file_name}"
+                except Exception as exc:  # pragma: no cover - worker failure path
+                    logger.exception(
+                        "Multithreaded tag_file_worker call failed for %s",
+                        file_name,
                     )
         pbar.close()
 
@@ -508,29 +524,31 @@ class ConcertTagger:
             concert_folders (list): List of paths to concert folders to be tagged.
             etree_db (SQLiteEtreeDB): Instance of the SQLiteEtreeDB class for database access.
             config: Configuration settings for tagging.
-            clear_existing_artwork (bool, optional): If True, existing artwork will be cleared before tagging. Defaults to False.
             clear_existing_tags (bool, optional): If True, existing tags will be cleared before tagging. Defaults to False.
         Raises:
             Exception: If an error occurs during the tagging process, it will be logged.
         """
         folder_count = len(concert_folders)
-        currentcount = 0
 
-        print(f"Processing tags for {folder_count} folders.")
-        for concert_folder in concert_folders:
-            currentcount = currentcount + 1
-            print(
-                "------------------------------------------------------------------------------"
-            )
-            print(
-                f"Processing ({currentcount}/{folder_count}): {Path(concert_folder).name}"
+        logger.info("Processing tags for %d folders.", folder_count)
+        for index, concert_folder in enumerate(concert_folders, start=1):
+            logger.debug("-" * 78)
+            logger.info(
+                "Processing (%d/%d): %s",
+                index,
+                folder_count,
+                Path(concert_folder).name,
             )
 
             tagger = ConcertTagger(concert_folder, config, etree_db)
             if not tagger.errormsg:
                 tagger.tag_files(clear_existing_tags=clear_existing_tags)
             else:
-                logging.error(f"tagger.errormsg: {tagger.errormsg}")
+                logger.error(
+                    "Tagger reported error for %s: %s",
+                    concert_folder,
+                    tagger.errormsg,
+                )
 
     def tag_shows(
         concert_folders: list,
@@ -544,34 +562,43 @@ class ConcertTagger:
             concert_folders (list): List of paths to concert folders to be tagged.
             etree_db (SQLiteEtreeDB): Instance of the SQLiteEtreeDB class for database access.
             config: Configuration settings for tagging.
-            clear_existing_artwork (bool, optional): If True, existing artwork will be cleared before tagging. Defaults to False.
             clear_existing_tags (bool, optional): If True, existing tags will be cleared before tagging. Defaults to False.
         Raises:
-            Exception: If an error occurs during the tagging process, it will be logged.
+            FolderProcessingError: When one or more folders fail to process.
         """
         folder_count = len(concert_folders)
-        currentcount = 0
+        errors: list[tuple[str, Exception]] = []
 
-        print(f"Processing tags for {folder_count} folders.")
-        for concert_folder in concert_folders:
-            currentcount = currentcount + 1
-            print(
-                "------------------------------------------------------------------------------"
-            )
-            print(
-                f"Processing ({currentcount}/{folder_count}): {Path(concert_folder).name}"
+        logger.info("Processing tags for %d folders.", folder_count)
+        for index, concert_folder in enumerate(concert_folders, start=1):
+            folder_name = Path(concert_folder).name
+            logger.info(
+                "Processing (%d/%d): %s",
+                index,
+                folder_count,
+                folder_name,
             )
             try:
                 tagger = ConcertTagger(concert_folder, config, etree_db)
-                if not tagger.errormsg:
-                    tagger.tag_files(clear_existing_tags=clear_existing_tags)
-                else:
-                    logging.error(f"tagger.errormsg: {tagger.errormsg}")
-            except Exception as e:
-                if e:
-                    logging.error(f"Error Processing folder {concert_folder} {e}")
-                else:
-                    logging.error(f"Error Processing folder {concert_folder}")
+                if getattr(tagger, "errormsg", None):
+                    raise TaggerError(tagger.errormsg)
+                tagger.tag_files(clear_existing_tags=clear_existing_tags)
+            except TaggerError as exc:
+                logger.error("Tagging error for %s: %s", folder_name, exc)
+                errors.append((concert_folder, exc))
+            except Exception as exc:  # pragma: no cover - defensive orchestration
+                logger.exception(
+                    "Unexpected error processing folder %s", concert_folder
+                )
+                errors.append((concert_folder, exc))
+
+        if errors:
+            summary = "; ".join(
+                f"{Path(folder).name}: {error}" for folder, error in errors
+            )
+            raise FolderProcessingError(
+                f"Failed to tag {len(errors)} folder(s): {summary}"
+            )
 
     def build_show_inserts(self):
         """

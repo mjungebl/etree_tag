@@ -7,7 +7,10 @@ from mutagen.flac import FLAC
 
 from InfoFileTagger_class import FlacInfoFileTagger
 from recordingfiles import RecordingFolder
+from services.exceptions import MetadataImportError, PersistenceError
 from services.persistence import TrackMetadataRepository
+
+logger = logging.getLogger(__name__)
 
 TrackMapping = Dict[str, Tuple[int, str, str]]
 
@@ -21,7 +24,7 @@ class MetadataImporter:
         repository: Optional[TrackMetadataRepository] = None,
         logger: Optional[logging.Logger] = None,
     ) -> None:
-        self.log = logger or logging.getLogger("MetadataImporter")
+        self.logger = logger or logging.getLogger(__name__)
         if info_tagger is None:
             info_logger = logging.getLogger("FlacInfoFileTagger")
             info_tagger = FlacInfoFileTagger(
@@ -32,55 +35,45 @@ class MetadataImporter:
         self.repository = repository
 
     # Public API ---------------------------------------------------------
-    def import_metadata(self, tagger) -> bool:
+    def import_metadata(self, tagger) -> None:
         """Populate track metadata for the supplied ``ConcertTagger`` instance."""
         directory = tagger.folderpath.as_posix()
 
         try:
             tagged = self.info_tagger.tag_folder(directory, clear_song_tags=False)
         except Exception as exc:  # pragma: no cover - defensive wrapper
-            self.log.error(
-                "Info file tagging raised an exception for %s: %s",
-                directory,
-                exc,
-            )
-            tagged = False
+            self.logger.error("Info file tagging raised an exception for %s: %s", directory, exc)
+            raise MetadataImportError(f"Info file tagging failed for {directory}") from exc
 
         if not tagged:
-            self.log.warning(
+            self.logger.warning(
                 "Info file tagging did not succeed for %s; applying filename fallback.",
                 directory,
             )
             fallback_mapping = self._derive_mapping_from_filenames(tagger)
             if not fallback_mapping:
-                self.log.error(
-                    "Unable to derive track metadata from info file or filenames for %s.",
-                    directory,
+                raise MetadataImportError(
+                    f"Unable to derive track metadata from info file or filenames for {directory}"
                 )
-                return False
             if not self._apply_track_mapping(fallback_mapping):
-                self.log.error(
-                    "Applying fallback track metadata failed for %s.",
-                    directory,
+                raise MetadataImportError(
+                    f"Applying fallback track metadata failed for {directory}"
                 )
-                return False
         else:
-            self.log.info("Info file tagging reported success for %s", directory)
+            self.logger.info("Info file tagging reported success for %s", directory)
 
-        # Refresh folder metadata to reflect newly written tags.
         tagger.folder = RecordingFolder(directory, tagger.db)
         records = tagger.build_show_inserts()
         if not records or any(rec[2] in (None, "") for rec in records):
-            self.log.error(
-                "Generated records still missing track numbers for %s.",
-                directory,
+            raise MetadataImportError(
+                f"Generated records still missing track numbers for {directory}"
             )
-            return False
 
         repository = self.repository or getattr(tagger, "repository", None)
         if repository is None:
-            self.log.error("No metadata repository available; cannot persist results for %s", directory)
-            return False
+            raise PersistenceError(
+                f"No metadata repository available; cannot persist results for {directory}"
+            )
 
         try:
             repository.overwrite_tracks(
@@ -88,20 +81,17 @@ class MetadataImporter:
                 records,
                 md5key=tagger.etreerec.md5key,
             )
-            if hasattr(tagger.etreerec, "_tracks"):
-                tagger.etreerec._tracks = None
-            self.log.info(
-                "Imported track metadata for shnid %s from local files.",
-                tagger.etreerec.id,
-            )
-            return True
         except Exception as exc:  # pragma: no cover - DB failure path
-            self.log.error(
-                "Failed to persist info-file metadata for shnid %s: %s",
-                tagger.etreerec.id,
-                exc,
-            )
-            return False
+            raise PersistenceError(
+                f"Failed to persist info-file metadata for shnid {tagger.etreerec.id}: {exc}"
+            ) from exc
+
+        if hasattr(tagger.etreerec, "_tracks"):
+            tagger.etreerec._tracks = None
+        self.logger.info(
+            "Imported track metadata for shnid %s from local files.",
+            tagger.etreerec.id,
+        )
 
     # Internal helpers ---------------------------------------------------
     @staticmethod
@@ -111,7 +101,7 @@ class MetadataImporter:
             try:
                 audio = FLAC(flac_path)
             except Exception as exc:
-                logging.error("Unable to load FLAC %s: %s", flac_path, exc)
+                logger.error("Unable to load FLAC %s: %s", flac_path, exc)
                 return False
 
             audio["tracknumber"] = track
@@ -120,7 +110,7 @@ class MetadataImporter:
             try:
                 audio.save()
             except Exception as exc:
-                logging.error("Saving updated tags failed for %s: %s", flac_path, exc)
+                logger.error("Saving updated tags failed for %s: %s", flac_path, exc)
                 return False
         return True
 
@@ -170,3 +160,4 @@ class MetadataImporter:
             seq += 1
 
         return mapping
+

@@ -1,10 +1,12 @@
 from pathlib import Path
 from mutagen.flac import FLAC
 import logging
+
 from sqliteetreedb import SQLiteEtreeDB, EtreeRecording
 from losslessfiles import ffp
 import re
 from datetime import datetime
+logger = logging.getLogger(__name__)
 # from import_show_metadata import import_show_folders
 
 
@@ -27,7 +29,7 @@ class RecordingFolder:
         self.folder = Path(concert_folder)
         self.etree_db = etree_db
         if not self.folder.is_dir():
-            logging.error(f"{concert_folder} is not a valid directory.")
+            logger.error("%s is not a valid directory.", concert_folder)
             raise ValueError(f"{concert_folder} is not a valid directory.")
         self.foldershnid = self._parse_shnid(self.folder.name)
         self.musicfiles = [MusicFile(str(x)) for x in self.folder.glob("*.flac")]
@@ -42,7 +44,7 @@ class RecordingFolder:
         self.checksums = self._get_checksums(self.musicfiles)
         self.recordingtype = self._classify_folder(self.folder.name)
 
-        logging.info(f"Found {len(self.musicfiles)} FLAC file(s) in {self.folder}")
+        logger.debug("Found %d FLAC file(s) in %s", len(self.musicfiles), self.folder)
 
     # def import_show_tags(self):
     #     """
@@ -86,14 +88,14 @@ class RecordingFolder:
     #                         else:
     #                             error = f'Error tagging files in folder {concert_folder}'
     #                             print(error)
-    #                             logging.error(error)
+    #                             logger.error(error)
     #                             continue
 
     #                     if None in tracks:
     #                         missingtitlefiles = ', '.join([file.name for file in show.folder.musicfiles if file.title is None])
     #                         error = f'Error Processing folder {concert_folder}: missing track title(s) {missingtitlefiles}'
     #                         print(error)
-    #                         logging.error(error)
+    #                         logger.error(error)
     #                     else:
     #                         rows = show.build_show_inserts()
     #                         print(f"inserting {len(rows)} rows for {concert_folder}")
@@ -103,7 +105,7 @@ class RecordingFolder:
     #                     existing_folders.append(concert_folder)
     #                     print(f"Matching tracknames exist for {concert_folder}")
     #             except Exception as e:
-    #                 logging.error(f'Error Processing folder {concert_folder} {e}')
+    #                 logger.error(f'Error Processing folder {concert_folder} {e}')
     #                 if concert_folder+'\n' not in existing_mismatched_folders:
     #                     mismatchlog.write(f"{concert_folder}\n")
     #     return successfully_imported, existing_folders
@@ -275,29 +277,37 @@ class RecordingFolder:
 
         matches, mismatch = db.get_local_checksum_matches(self.checksums)
         if debug:
-            print(f"{self.checksums=}")
-            print(f"{matches=}")
-            print(f"{mismatch=}")
+            logger.debug("self.checksums=%s", self.checksums)
+            logger.debug("matches=%s", matches)
+            logger.debug("mismatch=%s", mismatch)
 
         checksum_pairs = set()
 
         def _find_matching_pairs(match_list):
             for shnid, md5key in match_list:
                 if debug:
-                    print(f"{shnid=}", f"{md5key=}")
+                    logger.debug("shnid=%s md5key=%s", shnid, md5key)
                 try:
                     rec = EtreeRecording(db, shnid, md5key)
                 except Exception as e:
                     msg = f"Error encountered for {self.folder}: {e}"
                     if debug:
-                        print(msg)
+                        logger.debug(msg)
                     raise Exception(msg)
                 if debug:
-                    print(f"{rec.id=}", f"{rec.md5key=}", f"{rec.checksums=}")
+                    logger.debug(
+                        "rec.id=%s rec.md5key=%s rec.checksums=%s",
+                        rec.id,
+                        rec.md5key,
+                        rec.checksums,
+                    )
                 for sig in rec.checksums:
                     if set(sig.checksumlist) == set(self.checksums):
-                        print(
-                            f"Match found: {sig.filename} md5key={sig.id} shnid={sig.shnid}"
+                        logger.info(
+                            "Match found: %s md5key=%s shnid=%s",
+                            sig.filename,
+                            sig.id,
+                            sig.shnid,
                         )
                         if rec.tracks:
                             return rec
@@ -323,14 +333,12 @@ class RecordingFolder:
         for shnid, md5key in checksum_pairs:
             result = EtreeRecording(db, shnid, md5key)
             if self.foldershnid == result.id:
-                print(f"Exact match found for shnid {result.id} in folder name")
-                logging.info(f"Exact match found for shnid {result.id} in folder name")
+                logger.info("Exact match found for shnid %s in folder name", result.id)
                 return result
-            print(
-                f"No EXACT MATCH found for shnid {self.foldershnid} using {result.id}"
-            )
-            logging.warn(
-                f"No EXACT MATCH found for shnid {self.foldershnid} using {result.id}"
+            logger.warning(
+                "No EXACT MATCH found for shnid %s using %s",
+                self.foldershnid,
+                result.id,
             )
         return result
 
@@ -347,8 +355,7 @@ class RecordingFolder:
 
         if not folder_name.lower().startswith(abbr.lower()):
             msg = f"Folder name {folder_name} does not start with {abbr}"
-            print(msg)
-            logging.error(msg)
+            logger.error(msg)
             return
 
         parts = folder_name.split(".")
@@ -418,7 +425,7 @@ class RecordingFolder:
             try:
                 self.folder.rename(new_path)
             except FileExistsError:
-                logging.error(
+                logger.error(
                     f"Cannot rename {self.folder} to {new_path}: target exists"
                 )
                 return
