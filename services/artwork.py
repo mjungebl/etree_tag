@@ -50,6 +50,6 @@ def apply_artwork_to_audio(
     picture.mime = guess_artwork_mime_type(artwork_path)
     picture.data = image_data
     audio.add_picture(picture)
-    logger.info("Added artwork to file: %s", file_name)
+    logger.debug("Added artwork to file: %s", file_name)
     return True, None
 

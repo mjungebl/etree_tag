@@ -23,6 +23,8 @@ class MetadataImporter:
         info_tagger: Optional[FlacInfoFileTagger] = None,
         repository: Optional[TrackMetadataRepository] = None,
         logger: Optional[logging.Logger] = None,
+        *,
+        enable_filename_fallback: bool = False,
     ) -> None:
         self.logger = logger or logging.getLogger(__name__)
         if info_tagger is None:
@@ -33,6 +35,7 @@ class MetadataImporter:
             )
         self.info_tagger = info_tagger
         self.repository = repository
+        self.enable_filename_fallback = enable_filename_fallback
 
     # Public API ---------------------------------------------------------
     def import_metadata(self, tagger) -> None:
@@ -46,6 +49,14 @@ class MetadataImporter:
             raise MetadataImportError(f"Info file tagging failed for {directory}") from exc
 
         if not tagged:
+            if not self.enable_filename_fallback:
+                self.logger.error(
+                    "Info file tagging did not succeed for %s and filename fallback is disabled.",
+                    directory,
+                )
+                raise MetadataImportError(
+                    f"Info file tagging failed for {directory} and filename fallback is disabled"
+                )
             self.logger.warning(
                 "Info file tagging did not succeed for %s; applying filename fallback.",
                 directory,

@@ -1,109 +1,132 @@
 # Concert Tagger
 
-**Concert Tagger** is a Python script that tags FLAC music files (especially Grateful Dead recordings) with metadata and artwork. It:
-
-- Reads checksums from flac files in local folders to match a recording against an SQLite-based Etree database (accessed via `sqliteetreedb.py`).
-- Adds or updates tags (artist, album, track info, etc.) in the FLAC files.
-- Finds and embeds cover artwork if available.
-- Optionally clears existing embedded artwork before adding the new image. (currently requires a code change)
-- Copies an artwork file (`folder.jpg`) into each folder for quick visual identification.
+Concert Tagger is a command-line utility for matching local FLAC concert folders with the bundled Etree database, tagging the audio files, and managing cover artwork. The current tooling is built around Grateful Dead collections, but any artist present in the database can be processed.
 
 ---
 
-## Table of Contents
-
-1. [Requirements](#requirements)  
-2. [Usage](#usage)  
-3. [Configuration](#configuration)  
-4. [License](#license)
+## Highlights
+- Match folders to Etree shnids by verifying FLAC checksums.
+- Import disc/track numbers, titles, and show metadata directly from the database. If track information is not present in the database, an attempt to parse the info file will be made. There is an optional filename-based fallback, but this is left off by default as the filenames are not always titles.
+- Embed and manage artwork (including `folder.jpg`) according to per-artist rules.
+- Structured logging with explicit error codes so batch runs are easy to monitor.
 
 ---
 
 ## Requirements
+- **Python 3.11+** (tested on 3.13).
+- Python dependencies (installed automatically if you use the shipped `.venv`/`uv` workflow):
+  - `mutagen`
+  - `tqdm`
+  - `tomllib` (shipped with Python =3.11)
+- SQLite Etree database (`db/etree_scrape.db`). The first run seeds it from the CSV snapshots under `db/csv/`.
 
-1. **Python 3.11+** (recommended, though older versions may work).
-2. **Packages**:
-   - [mutagen](https://mutagen.readthedocs.io/) (for reading/writing FLAC tags)
-   - [tqdm](https://pypi.org/project/tqdm/) (for progress bars)
-   - `tomllib`  
-     - Bundled with Python 3.11+  
-     - For Python < 3.11, install [tomli](https://pypi.org/project/tomli/) and adjust imports.
-3. **SQLite Database** for Etree recordings (`sqliteetreedb.py` should handle it).
-4. **`recordingfiles.py`** module to locate FLAC files and checksums.
+### Quick Setup
+```bash
+# Option 1: let uv manage the environment (creates .venv automatically)
+uv sync
 
-
-## Usage
-Best way to get started is to run "uv sync" in the folder after downloading to get this up and running. This will create the venv with the requirements specified.
-Alternatively, you can manually set up a Python environment by installing the required packages listed above. (While this is subject to change, currently only mutagen and tqdm need to be installed if using Python 3.11 or greater; I used Python 3.13)
-My current recommendation is to execute the script from the `tagger.py` file. In the section at the bottom, there are 3 sections that I outlined depending on the use case. Uncomment the one that matches your usage.
-1. if using a single folder, or specific folders use a python list of path(s): 
-    concert_folders = [r"Z:\Music\Grateful Dead\gd1987\gd1987-01-28.140689.UltraMatrixSBD.cm.miller.flac24"]
-2. "single parent folder" - Edit the "parentfolder" to reflect a path to a folder containing show folders immediately beneath it, such as a "year" of shows
-```python
-    parentfolder = r'Z:\Music\Grateful Dead\gd1994'
+# Option 2: create/activate your own venv and install dependencies manually
+python -m venv .venv
+source .venv/bin/activate  # Windows: .\.venv\Scripts\activate
+pip install mutagen tqdm
 ```
-    concert_folders = sorted([f.path.replace('\\','/') for f in os.scandir(parentfolder) if f.is_dir()])
-3. "two level deep folder enumeration for processing" -- Edit the "parentofparents" to reflect a path to a folder containing folders that contain show folders, such as the path to a folder that contains multiple year folders of shows
-```python
-    parentofparents =r'M:/To_Tag'
-    parentlist = sorted([f.path.replace('\\','/') for f in os.scandir(parentofparents) if f.is_dir()])
-    for parentfolder in parentlist:
-        if parentfolder.lower().endswith("fail"): #addl filtering, exclude if the folder name ends with fail
-            continue
-        concert_folders.extend(sorted([f.path.replace('\\','/') for f in os.scandir(parentfolder) if f.is_dir()]))
+
+---
+
+## CLI Usage
+Run the orchestrator via `cli.py`:
+
+```bash
+python cli.py --help
 ```
-NOTE: I'd create a new folder and copy one or two shows into that folder and see how it works rather than running it on a lot of files at once. Put a couple of shows in that folder and try running it. Currently it won't tag song titles unless they're in the database already (over 8,000 are in there though). It will only do the album, artwork and comments. 
 
-There is a script called "InfoFileTagger.py" that can be used to tag the songs. It requires a text file in the directory to contain the shnid and have numbered tracks d1t01 if disc numbers are preferred or 01. song name, 01 song name, or a couple of other formats. I'll be incorporating that functionality directly in a later version. 
+Typical flows:
 
-NOTE: the call create the SQLiteEtreeDB passes a database in (sqlite). initially that database won't exist. when it initializes it will be populated from the csvs contained in the folder "db/csv/". If you move those files and have not initialized the database, you'll need to change the relative path to the csv files in sqliteetreedb.py. I'll be adding that to the config at some point, but for now, I'd leave them alone. That was a last minute change because the db is too large for github.  Also, as I have not added my scraping code to this project, this allows "manual" way to add more info to the db, for anyone inclined to do this that is not comfortable working with databases.
-The artists table now includes an `ArtistAbbrev` column. These abbreviations are
-used when locating artwork files (e.g. `gd` for Grateful Dead). Configuration
-for artwork directories is keyed by these abbreviations. If an artist
-abbreviation is not listed, artwork tagging is skipped and a notice is logged.
-The call I'm referring to is this one:
-etreedb = SQLiteEtreeDB(db_path="db/etree_tag_dbv2.db")
+```bash
+# Process every show folder directly under the parent directory
+python cli.py --parent-folder "X:/Downloads/_FTP/_Tag_test"
 
+# Tag explicit folders and remove existing tags first
+python cli.py \
+  "X:/Shows/gd1985-11-17.172965" "X:/Shows/gd1974-06-18.002341" \
+  --clear-tags
 
+# Use alternate config/db locations and a custom log file
+python cli.py --config config.toml --database db/etree_scrape.db \
+  --log-file logs/tagger.log --parent-folder "X:/Shows_to_process"
+```
+
+CLI options of note:
+- `--parent-folder`: expand immediate subdirectories and process each as a show.
+- `--clear-tags`: drop all non-artwork FLAC tags before writing new metadata.
+- `--log-file`: where structured logs land (console output mirrors INFO by default).
+- `--config`, `--database`: override the default config or SQLite locations.
+
+Exit codes are non-zero on failures so the command works well in batch scripts.
+
+### Logging
+Console + file logging is configured automatically. Toggle `preferences.verbose_logging = true` in `config.toml` for DEBUG-level detail.
 
 ---
 
 ## Configuration
-See config.toml file for additional explanation.
-
+`config.toml` drives behaviour. Key settings:
 
 ```toml
 [preferences]
-# Set the year format for tags.
-# Valid options: "YYYY" or "YY"
 year_format = "YYYY"
 segue_string = "->"
 soundboard_abbrev = "SBD"
 aud_abbrev = "AUD"
-matrix_abbrev = "MTX"
-ultramatrix_abbrev = "Ultramatrix"
 verbose_logging = false
+enable_filename_fallback = false  # opt-in for filename-derived metadata
+
 [album_tag]
 include_bitrate = true
 include_bitrate_not16_only = true
-include_shnid    = true
-include_venue   = false
-include_city    = true
-order = ["show_date","city","venue", "recording_type", "shnid","bitrate"]
-prefix = ['',' ',' ',' ',' (',' [']
-suffix = ['','','','',')',']']
+include_shnid = true
+include_venue = false
+include_city = true
+order = ["show_date", "city", "venue", "recording_type", "shnid", "bitrate"]
 
 [cover]
-clear_existing_artwork = false # Clears existing artwork tags and sets a new one
+clear_existing_artwork = false
 retain_existing_artwork = true
 
 [cover.default_images]
-# Map artist abbreviations to fallback artwork.
-gd = 'GD_Art/default.jpg'
+gd = "GD_Art/default.jpg"
 
 [cover.artwork_folders]
-gd = ['GD_Art/EE_Artwork/', 'GD_Art/TV_Artwork/']
+gd = ["GD_Art/EE_Artwork/", "GD_Art/TV_Artwork/"]
 ```
-## License
 
-This project is licensed under the MIT License. You are free to use, modify, and distribute this software. See the (LICENSE) file for more details.
+### Filename Fallback
+The importer defaults to info-file metadata. To let the legacy filename parser fill in disc/track numbers and titles when info files are missing, set:
+
+```toml
+[preferences]
+enable_filename_fallback = true
+```
+
+When the flag is `false`, metadata import stops with a `MetadataImportError` so callers can handle the failure explicitly.
+
+---
+
+## Database Notes
+- On first launch, the tool builds `db/etree_scrape.db` from `db/csv/`.
+- `sqliteetreedb.py` contains the read/write facade used by the tagging workflow.
+- Artist abbreviations (e.g., `gd`) drive artwork lookup; missing abbreviations simply skip artwork tagging with a log message.
+
+---
+
+## Development & Testing
+```bash
+python -m pytest
+```
+
+The project relies on structured logging internally. Enable verbose mode if you need to track down per-file debug output.
+
+---
+
+## License
+Released under the MIT License. See `LICENSE` for details.

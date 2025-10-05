@@ -159,7 +159,10 @@ class ConcertTagger:
         self.folder = RecordingFolder(concert_folder, db)
         self.db = db
         self.repository = TrackMetadataRepository(db)
-        self.metadata_importer = MetadataImporter(repository=self.repository)
+        self.metadata_importer = MetadataImporter(
+            repository=self.repository,
+            enable_filename_fallback=self.config.preferences.enable_filename_fallback,
+        )
         self.NoMatch = False
         try:
             self.etreerec = self.folder._find_matching_recording(debug=debug)

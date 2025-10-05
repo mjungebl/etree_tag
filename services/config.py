@@ -23,6 +23,7 @@ class PreferencesConfig:
     matrix_abbrev: Optional[str] = None
     ultramatrix_abbrev: Optional[str] = None
     verbose_logging: bool = False
+    enable_filename_fallback: bool = False
 
 
 @dataclass

@@ -11,6 +11,8 @@ aud_abbrev = "AUD"
 matrix_abbrev = "MTX"
 ultramatrix_abbrev = "Ultramatrix"
 verbose_logging = false
+enable_filename_fallback = false
+
 [album_tag]
 # Toggle inclusion of optional components in the album tag.
 include_bitrate = true
