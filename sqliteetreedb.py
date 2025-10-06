@@ -137,11 +137,11 @@ class SQLiteEtreeDB:
                         rows,
                     )
                     # self.conn.commit()
-
+            # TODO add an Artist_tag column and when it is populated, use that for artist and the artistname column as the album artist when both are populated
             self.cursor.execute("""
                 CREATE TABLE IF NOT EXISTS artists (
                     artistid INTEGER PRIMARY KEY,
-                    ArtistName TEXT UNIQUE ON CONFLICT IGNORE,
+                    ArtistName TEXT NOT NULL,
                     ArtistAbbrev TEXT
                 )
             """)
@@ -155,8 +155,10 @@ class SQLiteEtreeDB:
             # Insert predefined artists, no need for a csv yet
             artists_data = [
                 (2, "Grateful Dead", "gd"),
+                (3, "Jerry Garcia", "jg"), #lom
                 (4, "Phish", "ph"),
-                (12, "Garcia", "jg"),
+                (12, "Jerry Garcia", "jg"),
+                (25, "Jerry Garcia", "jg"), #jgb
                 (39, "Phil Lesh & Friends", "phil"),
                 (85, "Trey Anastasio", "trey"),
                 (847, "Grateful Dead Compilations", "gd"),

@@ -2,32 +2,30 @@ from __future__ import annotations
 from pathlib import Path
 import logging
 from typing import Iterable, Tuple
+from collections.abc import Mapping, Sequence
 
 from recordingfiles import RecordingFolder
+from services.config import load_app_config
 from sqliteetreedb import SQLiteEtreeDB, EtreeRecording
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 
 
-def check_and_rename(folder: str, db: SQLiteEtreeDB) -> Tuple[str, bool, list[str]]:
+def check_and_rename(
+    folder: str,
+    db: SQLiteEtreeDB,
+    standardize_artist_abbrev: Mapping[str, Sequence[str]] | None = None,
+) -> Tuple[str, bool, list[str]]:
     """Check a folder against the database and rename if a match is found.
 
-    Parameters
-    ----------
-    folder: str
-        Path to the concert folder.
-    db: SQLiteEtreeDB
-        Database instance used for matching.
-
-    Returns
-    -------
-    tuple
-        A tuple ``(new_folder, matched, errors)`` where ``new_folder`` is the
-        final folder path, ``matched`` indicates whether a database match was
-        found, and ``errors`` contains any fingerprint verification errors.
+    Returns a tuple ``(new_folder, matched, errors)``.
     """
-    rec_folder = RecordingFolder(folder, db)
+    rec_folder = RecordingFolder(
+        folder,
+        db,
+        standardize_artist_abbrev=standardize_artist_abbrev,
+    )
     match: EtreeRecording | None = rec_folder._find_matching_recording()
     if match:
         original = rec_folder.folder
@@ -44,27 +42,31 @@ def check_and_rename(folder: str, db: SQLiteEtreeDB) -> Tuple[str, bool, list[st
 
 
 def validate_folders(
-    folders: Iterable[str], db_path: str = "db/etree_scrape.db"
+    folders: Iterable[str],
+    db_path: str = "db/etree_scrape.db",
+    standardize_artist_abbrev: Mapping[str, Sequence[str]] | None = None,
 ) -> list[Tuple[str, bool, list[str]]]:
-    """Validate and rename a sequence of folders.
+    """Validate each folder and rename it when a match is found.
 
-    Parameters
-    ----------
-    folders: iterable of str
-        Folder paths to process.
-    db_path: str
-        Path to the SQLite database.
+    Args:
+        folders: Iterable of folder paths to inspect.
+        db_path: Path to the SQLite database used for matching.
+        standardize_artist_abbrev: Optional alias mapping applied during normalization.
 
-    Returns
-    -------
-    list of tuple
-        A list of ``(folder, matched, errors)`` tuples for each processed folder.
+    Returns:
+        List of ``(folder, matched, errors)`` tuples for every processed folder.
     """
     db = SQLiteEtreeDB(db_path)
     results = []
     for fld in folders:
         try:
-            results.append(check_and_rename(fld, db))
+            results.append(
+                check_and_rename(
+                    fld,
+                    db,
+                    standardize_artist_abbrev=standardize_artist_abbrev,
+                )
+            )
         except Exception as e:
             logging.error(f"Error processing {fld}: {e}")
             results.append((fld, False, [str(e)]))
@@ -73,32 +75,34 @@ def validate_folders(
 
 
 def validate_parent_folder(
-    parent: str, db_path: str = "db/etree_scrape.db"
+    parent: str,
+    db_path: str = "db/etree_scrape.db",
+    standardize_artist_abbrev: Mapping[str, Sequence[str]] | None = None,
 ) -> list[Tuple[str, bool, list[str]]]:
-    """Validate all subfolders of a parent directory.
+    """Validate every subfolder of ``parent`` using :func:`validate_folders`.
 
-    Parameters
-    ----------
-    parent: str
-        Path to a directory containing show folders.
-    db_path: str
-        Path to the SQLite database.
+    Args:
+        parent: Directory containing show folders to inspect.
+        db_path: Path to the SQLite database used for matching.
+        standardize_artist_abbrev: Optional alias mapping applied during normalization.
 
-    Returns
-    -------
-    list of tuple
-        Results from :func:`validate_folders` for each subfolder.
+    Returns:
+        List of ``(folder, matched, errors)`` tuples, one per child folder.
     """
     parent_path = Path(parent)
     folders = sorted(str(f) for f in parent_path.iterdir() if f.is_dir())
-    return validate_folders(folders, db_path)
+    return validate_folders(
+        folders,
+        db_path,
+        standardize_artist_abbrev=standardize_artist_abbrev,
+    )
 
 
 if __name__ == "__main__":
     import argparse
 
     # parent_folder = r"X:\Downloads\_FTP\_mismatches_RETRY_RESEARCH"
-    parent_folder = r"X:\Downloads\_FTP\_Concerts_Unofficial\Phish"
+    parent_folder = r"X:\Downloads\_FTP\_Tag_test"
     parser = argparse.ArgumentParser(
         description="Validate recording folders against the database"
     )
@@ -114,12 +118,33 @@ if __name__ == "__main__":
     parser.add_argument(
         "--db", default="db/etree_scrape.db", help="Path to SQLite database"
     )
+    parser.add_argument(
+        "--config",
+        default=str(Path(__file__).resolve().with_name("config.toml")),
+        help="Path to application configuration file",
+    )
+
     args = parser.parse_args()
 
+    try:
+        app_config = load_app_config(args.config)
+        alias_overrides = app_config.recording_folder.standardize_artist_abbrev or {}
+    except Exception as exc:  # pragma: no cover - configuration failure is user-driven
+        logging.error("Failed to load configuration from %s: %s", args.config, exc)
+        alias_overrides = {}
+
     if args.parent:
-        outcomes = validate_parent_folder(args.parent, args.db)
+        outcomes = validate_parent_folder(
+            args.parent,
+            args.db,
+            standardize_artist_abbrev=alias_overrides,
+        )
     else:
-        outcomes = validate_folders(args.folders, args.db)
+        outcomes = validate_folders(
+            args.folders,
+            args.db,
+            standardize_artist_abbrev=alias_overrides,
+        )
     mismatches = []
     errors: list[str] = []
     for folder, matched, ferr in outcomes:
@@ -140,3 +165,7 @@ if __name__ == "__main__":
             logging.error(err)
     else:
         print("All matched files verified successfully.")
+
+#python validation.py --parent "X:\Downloads\_FTP\_Tag_test" --config config.toml
+
+

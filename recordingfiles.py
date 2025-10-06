@@ -1,6 +1,7 @@
 from pathlib import Path
 from mutagen.flac import FLAC
 import logging
+from collections.abc import Mapping, Sequence
 
 from sqliteetreedb import SQLiteEtreeDB, EtreeRecording
 from losslessfiles import ffp
@@ -11,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 class RecordingFolder:
-    def __init__(self, concert_folder: str, etree_db: SQLiteEtreeDB | None = None):
+    def __init__(self, concert_folder: str, etree_db: SQLiteEtreeDB | None = None, standardize_artist_abbrev: Mapping[str, Sequence[str]] | None = None):
         """
         Initialize the Concert for a given concert folder.
 
@@ -25,9 +26,18 @@ class RecordingFolder:
             etree_db (SQLiteEtreeDB | None): Optional database instance used for
                 matching recordings. If not provided, ``_find_matching_recording``
                 must be passed a database when called.
+            standardize_artist_abbrev (Mapping[str, Sequence[str]] | None): Mapping of
+                canonical artist abbreviations to alternate forms to normalize folder names.
         """
         self.folder = Path(concert_folder)
         self.etree_db = etree_db
+        (
+            self.standardize_artist_abbrev,
+            self._canonical_abbrev_display,
+        ) = self._normalize_artist_abbrev_config(standardize_artist_abbrev)
+        self._artist_alias_lookup = self._build_alias_lookup(
+            self.standardize_artist_abbrev
+        )
         if not self.folder.is_dir():
             logger.error("%s is not a valid directory.", concert_folder)
             raise ValueError(f"{concert_folder} is not a valid directory.")
@@ -46,69 +56,57 @@ class RecordingFolder:
 
         logger.debug("Found %d FLAC file(s) in %s", len(self.musicfiles), self.folder)
 
-    # def import_show_tags(self):
-    #     """
-    #     Import show folders into the database.
-    #     This function processes each concert folder, checks for missing track titles,
-    #     and attempts to tag the files if necessary. It logs any errors encountered
-    #     during the process. If a folder is successfully tagged, it updates the database
-    #     with the new track metadata.
-    #     Args:
-    #         concert_folders (list): List of concert folder paths to process.
-    #         etree_db (SQLiteEtreeDB): Database connection object.
-    #         config: Configuration object for the tagging process.
-    #     Returns:
-    #         successfully_imported (list): List of concert folders that were successfully imported to the database.
-    #     """
-    #     successfully_imported = []
-    #     # existing_folders = []
-    #     # try:
-    #     #     with open("mismatched_folders.txt", "r", encoding="utf-8") as mismatchlogexisting:
-    #     #         existing_mismatched_folders = mismatchlogexisting.readlines()
-    #     # except FileNotFoundError:
-    #     #     existing_mismatched_folders = []
-    #     # with open("mismatched_folders.txt", "a", encoding="utf-8") as mismatchlog:
-    #         for concert_folder in concert_folders:
-    #             try:
-    #                 show = ConcertTagger(concert_folder,config,etree_db, debug=False)
-    #                 print(f'{show.etreerec.id=} {show.etreerec.md5key=} {show.folderpath=}')
-    #                 tracks = show.etreerec.tracks
-    #                 tracknames = [track.title for track in tracks]
-    #                 #print(f'{tracknames=}')
-    #                 if not tracknames:
-    #                     tracks = [track.title for track in show.folder.musicfiles]
-    #                     #for track in tracks:
-    #                     #    print(f'{track}')
-    #                     if None in tracks:
-    #                         tagged = InfoFileTagger.tag_folder(show.folderpath)
-    #                         if tagged:
-    #                             print(f'Sucessfully tagged files in folder {concert_folder}')
-    #                             show = ConcertTagger(concert_folder,config,etree_db)
-    #                             tracks = [track.title for track in show.folder.musicfiles]
-    #                         else:
-    #                             error = f'Error tagging files in folder {concert_folder}'
-    #                             print(error)
-    #                             logger.error(error)
-    #                             continue
+    @staticmethod
+    def _normalize_artist_abbrev_config(
+        config: Mapping[str, Sequence[str]] | None,
+    ) -> tuple[dict[str, tuple[str, ...]], dict[str, str]]:
+        if not config:
+            return {}, {}
 
-    #                     if None in tracks:
-    #                         missingtitlefiles = ', '.join([file.name for file in show.folder.musicfiles if file.title is None])
-    #                         error = f'Error Processing folder {concert_folder}: missing track title(s) {missingtitlefiles}'
-    #                         print(error)
-    #                         logger.error(error)
-    #                     else:
-    #                         rows = show.build_show_inserts()
-    #                         print(f"inserting {len(rows)} rows for {concert_folder}")
-    #                         show.db.insert_track_metadata(show.etreerec.id, rows,False,show.etreerec.md5key, debug = True)
-    #                         successfully_imported.append(concert_folder)
-    #                 else:
-    #                     existing_folders.append(concert_folder)
-    #                     print(f"Matching tracknames exist for {concert_folder}")
-    #             except Exception as e:
-    #                 logger.error(f'Error Processing folder {concert_folder} {e}')
-    #                 if concert_folder+'\n' not in existing_mismatched_folders:
-    #                     mismatchlog.write(f"{concert_folder}\n")
-    #     return successfully_imported, existing_folders
+        normalized: dict[str, tuple[str, ...]] = {}
+        display_map: dict[str, str] = {}
+        for key, values in config.items():
+            if key is None:
+                continue
+            canonical_raw = str(key).strip()
+            if not canonical_raw:
+                continue
+            canonical = canonical_raw.lower()
+            if isinstance(values, str):
+                candidates = [values]
+            else:
+                try:
+                    candidates = list(values)
+                except TypeError:
+                    candidates = [values]
+
+            cleaned = []
+            for candidate in candidates:
+                if candidate is None:
+                    continue
+                candidate_str = str(candidate).strip()
+                if not candidate_str:
+                    continue
+                cleaned.append(candidate_str)
+
+            normalized[canonical] = tuple(dict.fromkeys(cleaned))
+            display_map[canonical] = canonical_raw
+
+        return normalized, display_map
+
+    @staticmethod
+    def _build_alias_lookup(
+        normalized: dict[str, tuple[str, ...]]
+    ) -> dict[str, str]:
+        alias_lookup: dict[str, str] = {}
+        for canonical, aliases in normalized.items():
+            alias_lookup[canonical] = canonical
+            for alias in aliases:
+                alias_lookup[str(alias).lower()] = canonical
+        return alias_lookup
+
+
+ 
 
     def _classify_folder(self, folder_name: str) -> str:
         """
@@ -348,22 +346,81 @@ class RecordingFolder:
             return
 
         folder_name = self.folder.name
-        abbr = etree_rec.artist_abbrev
+        raw_abbr = etree_rec.artist_abbrev
 
         shnid = getattr(etree_rec, "id", None)
         db_date = getattr(etree_rec, "date", None)
 
-        if not folder_name.lower().startswith(abbr.lower()):
-            msg = f"Folder name {folder_name} does not start with {abbr}"
+        abbr_lower = raw_abbr.lower()
+        alias_lookup = getattr(self, "_artist_alias_lookup", {})
+        canonical_lower = alias_lookup.get(abbr_lower, abbr_lower)
+        canonical_abbr = self._canonical_abbrev_display.get(
+            canonical_lower,
+            raw_abbr if canonical_lower == abbr_lower else canonical_lower,
+        )
+        alias_candidates = self.standardize_artist_abbrev.get(canonical_lower, ())
+
+        candidate_pairs: list[tuple[str, str]] = []
+        seen: set[str] = set()
+
+        def add_candidate(value):
+            if value is None:
+                return
+            candidate_str = str(value).strip()
+            if not candidate_str:
+                return
+            candidate_lower = candidate_str.lower()
+            if candidate_lower in seen:
+                return
+            seen.add(candidate_lower)
+            candidate_pairs.append((candidate_str, candidate_lower))
+
+        add_candidate(canonical_abbr)
+        for candidate in alias_candidates:
+            add_candidate(candidate)
+        add_candidate(raw_abbr)
+
+        if not candidate_pairs:
+            add_candidate(raw_abbr)
+
+        ordered_candidates = sorted(
+            candidate_pairs,
+            key=lambda item: (-len(item[1]), item[1] != canonical_lower),
+        )
+
+        folder_lower = folder_name.lower()
+        matched_candidate: tuple[str, str] | None = None
+        for candidate, candidate_lower in ordered_candidates:
+            if folder_lower.startswith(candidate_lower):
+                matched_candidate = (candidate, candidate_lower)
+                break
+
+        if matched_candidate is None:
+            if alias_candidates:
+                msg = (
+                    f"Folder name {folder_name} does not start with {canonical_abbr} "
+                    f"or configured aliases {alias_candidates}"
+                )
+            else:
+                msg = (
+                    f"Folder name {folder_name} does not start with "
+                    f"{canonical_abbr if canonical_abbr else raw_abbr}"
+                )
             logger.error(msg)
             return
 
-        parts = folder_name.split(".")
+        parts = folder_name.split('.')
         first = parts[0]
         others = parts[1:]
 
-        # Strip artist abbreviation
-        remainder = first[len(abbr) :]
+        matched_display, matched_lower = matched_candidate
+        remainder = first[len(matched_display):]
+        alt_component = None
+        if matched_lower != canonical_lower:
+            alt_component = first[: len(matched_display)]
+        elif abbr_lower != canonical_lower:
+            alt_component = raw_abbr
+
 
         # Handle year expansion
         m = re.match(r"(?P<year>\d{4})(?P<rest>.*)$", remainder)
@@ -408,15 +465,26 @@ class RecordingFolder:
         except Exception:
             pass
 
-        first = f"{abbr}{year}-{month}-{day}{after_date}"
+        first = f"{canonical_abbr}{year}-{month}-{day}{after_date}"
 
-        # Ensure shnid position
-        if shnid is not None:
-            shnid_str = str(shnid)
-            others = [p for p in others if p != shnid_str]
-            others.insert(0, shnid_str)
+        shnid_str = str(shnid) if shnid is not None else None
+        alt_lower = alt_component.lower() if alt_component else None
+        cleaned_others = []
+        for part in others:
+            if shnid_str and part == shnid_str:
+                continue
+            if alt_lower and part.lower() == alt_lower:
+                continue
+            cleaned_others.append(part)
 
-        new_name = ".".join([first] + others)
+        new_parts = [first]
+        if shnid_str:
+            new_parts.append(shnid_str)        
+        if alt_component:
+            new_parts.append(alt_component)
+        new_parts.extend(cleaned_others)
+
+        new_name = ".".join(new_parts)
         while ".." in new_name:
             new_name = new_name.replace("..", ".")
 
@@ -431,7 +499,11 @@ class RecordingFolder:
                 return
 
             # Reinitialize to update all path-based attributes
-            self.__init__(str(new_path), self.etree_db)
+            self.__init__(
+                str(new_path),
+                self.etree_db,
+                self.standardize_artist_abbrev,
+            )
 
     def verify_fingerprint(self):
         """Verify FLAC files using an ffp checksum file.

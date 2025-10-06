@@ -73,7 +73,20 @@ class MetadataImporter:
         else:
             self.logger.info("Info file tagging reported success for %s", directory)
 
-        tagger.folder = RecordingFolder(directory, tagger.db)
+        alias_overrides = None
+        if hasattr(tagger, "config"):
+            recording_cfg = getattr(tagger.config, "recording_folder", None)
+            if recording_cfg is not None:
+                alias_overrides = getattr(
+                    recording_cfg,
+                    "standardize_artist_abbrev",
+                    None,
+                )
+        tagger.folder = RecordingFolder(
+            directory,
+            tagger.db,
+            standardize_artist_abbrev=alias_overrides,
+        )
         records = tagger.build_show_inserts()
         if not records or any(rec[2] in (None, "") for rec in records):
             raise MetadataImportError(

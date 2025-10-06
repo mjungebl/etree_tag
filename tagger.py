@@ -156,7 +156,16 @@ class ConcertTagger:
         self.folderpath = Path(concert_folder)
         if not self.folderpath.is_dir():
             raise ValueError(f"{concert_folder} is not a valid directory.")
-        self.folder = RecordingFolder(concert_folder, db)
+        alias_overrides = getattr(
+            getattr(config, "recording_folder", None),
+            "standardize_artist_abbrev",
+            None,
+        )
+        self.folder = RecordingFolder(
+            concert_folder,
+            db,
+            standardize_artist_abbrev=alias_overrides,
+        )
         self.db = db
         self.repository = TrackMetadataRepository(db)
         self.metadata_importer = MetadataImporter(

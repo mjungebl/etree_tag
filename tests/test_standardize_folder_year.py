@@ -46,13 +46,13 @@ from recordingfiles import RecordingFolder
 
 
 def _make_tagger(
-    folder: Path, date="1975-07-05", shnid=12345, abbr="gd"
+    folder: Path, date="1975-07-05", shnid=12345, abbr="gd", standardize_artist_abbrev=None
 ) -> ConcertTagger:
     tg = ConcertTagger.__new__(ConcertTagger)
     tg.config = {"cover": {"artwork_folders": {}, "default_images": {}}}
     tg.folderpath = folder
     tg.db = None
-    tg.folder = RecordingFolder(str(folder))
+    tg.folder = RecordingFolder(str(folder), standardize_artist_abbrev=standardize_artist_abbrev)
     tg.etreerec = types.SimpleNamespace(artist_abbrev=abbr, id=shnid, date=date)
     return tg
 
@@ -100,3 +100,18 @@ def test_move_existing_shnid(tmp_path: Path):
     tagger.folder._standardize_folder_year(tagger.etreerec)
     tagger.folderpath = tagger.folder.folder
     assert tagger.folderpath.name == "gd1975-07-05.777.sbd.flac16"
+
+
+def test_standardize_folder_year_with_alias(tmp_path: Path):
+    folder = tmp_path / "jg+jk1975-07-05.sbd"
+    folder.mkdir()
+    overrides = {"jg": ["jgb", "jg+jk", "jgms"]}
+    tagger = _make_tagger(
+        folder,
+        shnid=222,
+        abbr="jg",
+        standardize_artist_abbrev=overrides,
+    )
+    tagger.folder._standardize_folder_year(tagger.etreerec)
+    tagger.folderpath = tagger.folder.folder
+    assert tagger.folderpath.name == "jg1975-07-05.jg+jk.222.sbd"
