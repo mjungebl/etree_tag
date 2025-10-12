@@ -66,5 +66,5 @@ shorten = "K:/Flac/shorten.exe"
 shntool = "K:/Flac/shntool.exe"
 
 [recording_folder.standardize_artist_abbrev]
-jg = ["jgb", "jg+jk", "jgjk", "jgms","lom"]
+jg = ["jgb", "jg+jk", "jgjk", "jgms","lom","reconstruction","recon"]
 

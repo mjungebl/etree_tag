@@ -1,6 +1,9 @@
 import types
 import sys
 from pathlib import Path
+import validation
+from validation import check_and_rename, validate_parent_folder
+from recordingfiles import RecordingFolder
 
 # ensure project root is on path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -14,9 +17,7 @@ mutagen.flac = flac_mod
 sys.modules.setdefault("mutagen", mutagen)
 sys.modules.setdefault("mutagen.flac", flac_mod)
 
-import validation
-from validation import check_and_rename, validate_parent_folder
-from recordingfiles import RecordingFolder
+
 
 
 class DummyDB:

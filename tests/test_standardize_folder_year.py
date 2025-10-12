@@ -1,6 +1,8 @@
 import types
 import sys
 from pathlib import Path
+from tagger import ConcertTagger
+from recordingfiles import RecordingFolder
 
 # ensure project root is on path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -41,8 +43,7 @@ tqdm_mod = types.ModuleType("tqdm")
 tqdm_mod.tqdm = lambda x=None, **k: x
 sys.modules.setdefault("tqdm", tqdm_mod)
 
-from tagger import ConcertTagger
-from recordingfiles import RecordingFolder
+
 
 
 def _make_tagger(
