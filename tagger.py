@@ -1,20 +1,21 @@
 from pathlib import Path
 from recordingfiles import RecordingFolder
 from sqliteetreedb import SQLiteEtreeDB
-#from InfoFileTagger_class import FlacInfoFileTagger
 import logging
 import os
 from tqdm import tqdm
-
-# from concurrent.futures import ProcessPoolExecutor, as_completed
-# import multiprocessing
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import (
+    ThreadPoolExecutor, 
+    as_completed,
+)
 import shutil
 import re
 from datetime import datetime
 from typing import Optional
-
-from services.config import AppConfig, load_app_config
+from services.config import (
+    AppConfig, 
+    load_app_config,
+)
 from services.exceptions import (
     ConfigurationError,
     FolderProcessingError,

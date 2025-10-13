@@ -115,4 +115,4 @@ def test_standardize_folder_year_with_alias(tmp_path: Path):
     )
     tagger.folder._standardize_folder_year(tagger.etreerec)
     tagger.folderpath = tagger.folder.folder
-    assert tagger.folderpath.name == "jg1975-07-05.jg+jk.222.sbd"
+    assert tagger.folderpath.name == "jg1975-07-05.222.jg+jk.sbd"

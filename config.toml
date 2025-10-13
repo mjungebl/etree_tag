@@ -66,5 +66,9 @@ shorten = "K:/Flac/shorten.exe"
 shntool = "K:/Flac/shntool.exe"
 
 [recording_folder.standardize_artist_abbrev]
+# Aliases defined here are appended after the SHNID during folder renames.
+# Only the first matching alias is used for a given show.
 jg = ["jgb", "jg+jk", "jgjk", "jgms","lom","reconstruction","recon"]
+bobby = ["bobby&themidnites","bobbyandthemidnites","bobby&midnites","bobby&midnite","bobbymidnites","bobbymidnite","Bobby and The Midnites"]
+trey = ["tab"]
 

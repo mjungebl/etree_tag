@@ -1,23 +1,9 @@
 import types
-import sys
 from pathlib import Path
+
 import validation
 from validation import check_and_rename, validate_parent_folder
 from recordingfiles import RecordingFolder
-
-# ensure project root is on path
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-# Stub mutagen.flac used by RecordingFolder
-mutagen = types.ModuleType("mutagen")
-flac_mod = types.ModuleType("mutagen.flac")
-flac_mod.FLAC = object
-flac_mod.Picture = object
-mutagen.flac = flac_mod
-sys.modules.setdefault("mutagen", mutagen)
-sys.modules.setdefault("mutagen.flac", flac_mod)
-
-
 
 
 class DummyDB:
@@ -95,7 +81,7 @@ def test_check_and_rename_with_alias_prefix(tmp_path, monkeypatch):
         standardize_artist_abbrev=alias_overrides,
     )
     assert matched
-    renamed = folder.parent / "jg1991-03-02.jg+jk.222.sbd"
+    renamed = folder.parent / "jg1991-03-02.222.jg+jk.sbd"
     assert renamed.exists()
     assert Path(new_folder) == renamed
     assert errors == []
@@ -124,7 +110,7 @@ def test_check_and_rename_with_db_alias(tmp_path, monkeypatch):
         standardize_artist_abbrev=alias_overrides,
     )
     assert matched
-    renamed = folder.parent / "jg1981-08-06.jgb.333.test"
+    renamed = folder.parent / "jg1981-08-06.333.jgb.test"
     assert renamed.exists()
     assert Path(new_folder) == renamed
     assert errors == []

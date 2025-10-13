@@ -55,7 +55,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--log-file",
-        default="tag_log.log",
+        default="log/tag_log.log",
         help="Log file to write progress information (default: %(default)s)",
     )
     return parser.parse_args(argv)

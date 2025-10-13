@@ -165,6 +165,8 @@ class SQLiteEtreeDB:
                 (28494, "Grateful Dead Interviews", "gd"),
                 (8515, "Pigpen", "pigpen"),
                 (40644, "Furthur", "furthur"),
+                (17656, "Steve Kimock", "sk"),
+                (16947, "Bobby & the Midnites", "bobby"),
             ]
             self.cursor.executemany(
                 "INSERT OR REPLACE INTO artists (artistid, ArtistName, ArtistAbbrev) VALUES (?, ?, ?);",

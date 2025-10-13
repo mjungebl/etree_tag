@@ -1,10 +1,12 @@
-from InfoFileTagger import all_flac_tagged
+from InfoFileTagger_class import FlacInfoFileTagger
 from _Check_Unmatched import write_list_to_file
 import os
 
 from time import perf_counter
 
 start_time = perf_counter()
+
+tagger = FlacInfoFileTagger(also_log_to_console=False)
 
 untagged = []
 for year in range(1970, 1992):
@@ -14,7 +16,7 @@ for year in range(1970, 1992):
     )
     for fldr in concert_folders:
         try:
-            if not all_flac_tagged(fldr):
+            if not tagger.all_flac_tagged(fldr):
                 untagged.append(fldr)
         except Exception as e:
             print(f"Error in all_flac_tagged {e} {fldr}")

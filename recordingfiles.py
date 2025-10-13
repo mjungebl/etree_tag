@@ -545,17 +545,4 @@ class MusicFile:
         return f"{minutes:02}:{remaining_seconds:02}"
 
 
-# Example usage:
-if __name__ == "__main__":
-    import logging
 
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s"
-    )
-    # TODO: below is unimplemented for load to db so far, but will be used to pull entries into the database from files. Current code needs a cleanup and will be merged into this module
-    concert_folder = r"X:\Downloads\_FTP\gdead.1982.project_missing\gd1982-09-12.7826.sbd.ladner.sbeok.flac16"
-    etree_db = SQLiteEtreeDB()
-    tagger = RecordingFolder(concert_folder, etree_db)
-    rows = tagger.build_track_inserts()
-    for row in rows:
-        print(row)
