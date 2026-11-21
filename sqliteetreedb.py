@@ -2,12 +2,16 @@ import sqlite3
 import logging
 import datetime
 import csv
+from pathlib import Path
 import os
 import shutil
 import zipfile
-import lcdb_graphql as lcdb
 import re
+
+import lcdb_graphql as lcdb
 from losslessfiles import parse_st5, parse_flac_fingerprint, parse_md5
+
+CSV_DIRECTORY = Path(__file__).resolve().parent / "db" / "csv"
 
 
 class SQLiteEtreeDB:
@@ -43,7 +47,7 @@ class SQLiteEtreeDB:
             count = self.cursor.fetchone()[0]
             if count == 0:
                 with open(
-                    "db/csv/signatures.csv", "r", newline="", encoding="utf-8"
+                    CSV_DIRECTORY / "signatures.csv", "r", newline="", encoding="utf-8"
                 ) as csvfile:
                     reader = csv.DictReader(csvfile)  # Uses the first row as headers
                     rows = []
@@ -85,7 +89,7 @@ class SQLiteEtreeDB:
             count = self.cursor.fetchone()[0]
             if count == 0:
                 with open(
-                    "db/csv/shnlist.csv", "r", newline="", encoding="utf-8"
+                    CSV_DIRECTORY / "shnlist.csv", "r", newline="", encoding="utf-8"
                 ) as csvfile:
                     reader = csv.DictReader(csvfile)  # Uses the first row as headers
                     rows = []
@@ -122,7 +126,7 @@ class SQLiteEtreeDB:
             count = self.cursor.fetchone()[0]
             if count == 0:
                 with open(
-                    "db/csv/title_transformations.csv",
+                    CSV_DIRECTORY / "title_transformations.csv",
                     "r",
                     newline="",
                     encoding="utf-8",
@@ -194,7 +198,7 @@ class SQLiteEtreeDB:
             count = self.cursor.fetchone()[0]
             if count == 0:
                 with open(
-                    "db/csv/track_metadata.csv", "r", newline="", encoding="utf-8"
+                    CSV_DIRECTORY / "track_metadata.csv", "r", newline="", encoding="utf-8"
                 ) as csvfile:
                     reader = csv.DictReader(csvfile)  # Uses the first row as headers
                     rows = []
@@ -246,7 +250,7 @@ class SQLiteEtreeDB:
             count = self.cursor.fetchone()[0]
             if count == 0:
                 with open(
-                    "db/csv/checksum_files.csv", "r", newline="", encoding="utf-8"
+                    CSV_DIRECTORY / "checksum_files.csv", "r", newline="", encoding="utf-8"
                 ) as csvfile:
                     reader = csv.DictReader(csvfile)  # Uses the first row as headers
                     rows = []

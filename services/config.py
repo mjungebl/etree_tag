@@ -5,6 +5,19 @@ from pathlib import Path
 from typing import Dict, List, Optional
 import tomllib
 
+CONFIG_VERSION = 1
+SHIPPED_CONFIG = Path(__file__).resolve().parents[1] / "config.toml"
+LIBRARY_LOG_PATH = Path("tagger_logs") / "tag_log.log"
+
+
+@dataclass
+class RunConfig:
+    library_folder: str = ""
+    scan_subfolders: bool = True
+    database: str = ""
+    log_file: str = ""
+    clear_tags: bool = False
+
 
 @dataclass
 class CoverConfig:
@@ -68,6 +81,7 @@ class AppConfig:
     recording_folder: RecordingFolderConfig
     supportfiles: SupportFilesConfig
     raw: Dict[str, object] = field(default_factory=dict)
+    run: RunConfig = field(default_factory=RunConfig)
 
     def to_mapping(self) -> Dict[str, object]:
         """Return a dict compatible with legacy code expecting nested mappings."""
@@ -93,9 +107,109 @@ class AppConfig:
         }
 
 
-def load_app_config(path: str | Path) -> AppConfig:
+def _read_config(path: Path, require_version: bool) -> dict:
     with open(path, "rb") as fh:
         data = tomllib.load(fh)
+    version = data.get("config_version")
+    if (version is not None or require_version) and (
+        type(version) is not int or version != CONFIG_VERSION
+    ):
+        raise ValueError(
+            f"Unsupported config_version {version!r}. Expected {CONFIG_VERSION}."
+        )
+    return data
+
+
+def _merge(defaults: dict, overrides: dict) -> dict:
+    result = dict(defaults)
+    for key, value in overrides.items():
+        if isinstance(value, dict) and isinstance(result.get(key), dict):
+            value = _merge(result[key], value)
+        result[key] = value
+    return result
+
+
+def _resolve_paths(data: dict, directory: Path) -> None:
+    def resolve(value):
+        if isinstance(value, str) and value:
+            path = Path(value).expanduser()
+            return str(directory / path) if not path.is_absolute() else str(path)
+        return value
+
+    for section, keys in (
+        ("run", ("library_folder", "database", "log_file")),
+        ("cover", ("default_images", "artwork_folders")),
+        ("supportfiles", ()),
+    ):
+        values = data.get(section, {})
+        if not isinstance(values, dict):
+            raise ValueError(f"[{section}] must be a table.")
+        for key in keys or tuple(values):
+            if key not in values:
+                continue
+            value = values[key]
+            if isinstance(value, dict):
+                values[key] = {
+                    name: [resolve(path) for path in item] if isinstance(item, list)
+                    else resolve(item)
+                    for name, item in value.items()
+                }
+            else:
+                values[key] = resolve(value)
+
+
+def _validate_config(data: dict) -> None:
+    for section, model in (
+        ("run", RunConfig()),
+        ("preferences", PreferencesConfig()),
+        ("album_tag", AlbumTagConfig()),
+        ("cover", CoverConfig()),
+        ("supportfiles", {}),
+        ("recording_folder", RecordingFolderConfig()),
+    ):
+        values = data.get(section, {})
+        if not isinstance(values, dict):
+            raise ValueError(f"[{section}] must be a table.")
+        fields = model if isinstance(model, dict) else vars(model)
+        for key, expected in fields.items():
+            if key not in values:
+                continue
+            value = values[key]
+            kind = str if expected is None else type(expected)
+            if type(value) is not kind or (
+                kind is list and any(not isinstance(item, str) for item in value)
+            ):
+                label = "list of strings" if kind is list else kind.__name__
+                raise ValueError(f"{section}.{key} must be a {label}.")
+    if data.get("preferences", {}).get("year_format", "YYYY").upper() not in {"YY", "YYYY"}:
+        raise ValueError("preferences.year_format must be YY or YYYY.")
+    album = data.get("album_tag", {})
+    if "prefix" in album or "suffix" in album:
+        if len(album.get("order", AlbumTagConfig().order)) != len(album.get("prefix", [])) or (
+            len(album.get("prefix", [])) != len(album.get("suffix", []))
+        ):
+            raise ValueError("album_tag.order, prefix and suffix must have the same length.")
+    if set(album.get("order", [])) - set(AlbumTagConfig().order):
+        raise ValueError("album_tag.order contains an unsupported component.")
+    cover = data.get("cover", {})
+    for paths in cover.get("artwork_folders", {}).values():
+        if not isinstance(paths, list) or any(not isinstance(path, str) for path in paths):
+            raise ValueError("cover.artwork_folders must map artists to lists of paths.")
+    if any(not isinstance(path, str) for path in cover.get("default_images", {}).values()):
+        raise ValueError("cover.default_images must map artists to paths.")
+    if any(not isinstance(path, str) for path in data.get("supportfiles", {}).values()):
+        raise ValueError("supportfiles must map tool names to paths.")
+
+
+def load_app_config(path: str | Path, *, user_config: bool = False) -> AppConfig:
+    path = Path(path).expanduser().absolute()
+    data = _read_config(path, require_version=user_config)
+    if user_config or "config_version" in data:
+        baseline = _read_config(SHIPPED_CONFIG, require_version=False)
+        _resolve_paths(baseline, SHIPPED_CONFIG.parent)
+        _resolve_paths(data, path.parent)
+        data = _merge(baseline, data)
+    _validate_config(data)
 
     pref_defaults = PreferencesConfig()
     for key, value in (data.get("preferences") or {}).items():
@@ -156,4 +270,8 @@ def load_app_config(path: str | Path) -> AppConfig:
         recording_folder=recording_folder,
         supportfiles=supportfiles,
         raw=data,
+        run=RunConfig(**{
+            key: value for key, value in data.get("run", {}).items()
+            if key in vars(RunConfig())
+        }),
     )

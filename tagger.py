@@ -11,6 +11,7 @@ from concurrent.futures import (
 import shutil
 import re
 from datetime import datetime
+from tempfile import NamedTemporaryFile
 from typing import Optional
 from services.config import (
     AppConfig, 
@@ -335,28 +336,33 @@ class ConcertTagger:
                 )
                 return existing_artworks[0]
 
-            for existing_artwork in existing_artworks:
-                if retain_existing_artwork:
-                    backup_name = f"{existing_artwork}.old"
-                    os.rename(existing_artwork, backup_name)
-                    logger.debug("Renamed %s to %s", existing_artwork, backup_name)
-                else:
-                    os.remove(existing_artwork)
-                    logger.debug("Deleted existing artwork %s", existing_artwork)
             dest_ext = os.path.splitext(existing_artworks[0])[1].lower()
         else:
             dest_ext = artwork_ext
 
         dest_file = os.path.join(folder_path_str, f"folder{dest_ext}")
+        temporary = None
         try:
-            if os.path.exists(dest_file) and not clear_existing_artwork:
-                logger.debug(
-                    "%s already exists. Not replacing due to retention policy.",
-                    dest_file,
-                )
-            elif not os.path.exists(dest_file):
-                shutil.copy2(artwork_path_str, dest_file)
-                logger.info("Copied new artwork to %s.", dest_file)
+            image_data = Path(artwork_path_str).read_bytes()
+            if existing_artworks and Path(dest_file).read_bytes() == image_data:
+                logger.debug("Folder artwork already matches %s", artwork_path_str)
+                return dest_file
+
+            with NamedTemporaryFile(dir=folder_path_str, delete=False) as staged:
+                temporary = Path(staged.name)
+                staged.write(image_data)
+
+            for existing_artwork in existing_artworks:
+                backup_name = f"{existing_artwork}.old"
+                if retain_existing_artwork and not os.path.lexists(backup_name):
+                    os.rename(existing_artwork, backup_name)
+                    logger.debug("Renamed %s to %s", existing_artwork, backup_name)
+                elif existing_artwork != dest_file:
+                    os.remove(existing_artwork)
+                    logger.debug("Deleted existing artwork %s", existing_artwork)
+
+            os.replace(temporary, dest_file)
+            logger.info("Copied new artwork to %s.", dest_file)
         except FileNotFoundError as e:
             logger.error(
                 "Error copying artwork file %s to %s: %s",
@@ -365,6 +371,9 @@ class ConcertTagger:
                 e,
             )
             return None
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
 
         return dest_file
 

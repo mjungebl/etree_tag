@@ -65,9 +65,35 @@ CLI options of note:
 Exit codes are non-zero on failures so the command works well in batch scripts.
 
 ### Logging
-Console + file logging is configured automatically. Toggle `preferences.verbose_logging = true` in `config.toml` for DEBUG-level detail.
+Setup defaults the base log path to `tagger_logs/tag_log.log` under your saved
+library or show folder. Each run prefixes the filename with a timestamp, for
+example `2026-11-21_14-30-05_123456_tag_log.log`. Choose a different base path
+during setup, edit `run.log_file` in your
+user TOML, or use `--log-file` for a single run. Setup offers verbose
+diagnostic logging, which defaults to off. Set `preferences.verbose_logging = true`
+in your user TOML for DEBUG-level detail in the terminal and log file.
 
 ---
+
+## First-run setup
+
+Run `python cli.py` in an interactive terminal. Setup shows the defaults as it
+asks for your library, catalog, logging, and artwork preferences. Press Enter to
+accept a displayed default. Setup saves your preferences and prints the full
+path. You can edit that TOML file in a text editor. Setup leaves show files
+untouched.
+
+The saved file is `%APPDATA%\EtreeTag\config.toml` on Windows and
+`$XDG_CONFIG_HOME/etree-tag/config.toml` on other platforms, with
+`~/.config/etree-tag/config.toml` used when XDG_CONFIG_HOME is unset.
+Later runs use your saved library and preferences. Passing show folders or
+`--parent-folder` overrides the saved library for that run. Use `--clear-tags`
+or `--no-clear-tags` to override the saved tag-clearing preference.
+
+The shipped `config.toml` supplies defaults. To keep using an existing TOML
+directly, pass `--config PATH`. To adopt existing choices into the managed
+configuration, transfer them to the file created by setup, keeping its
+`config_version` and making any paths relative to that file or absolute.
 
 ## Configuration
 `config.toml` drives behaviour. Key settings:
