@@ -48,3 +48,23 @@ def test_find_artwork_no_default(tmp_path: Path):
     tagger = _make_tagger([str(tmp_path / "art")], {})
     result = tagger._find_artwork("gd", "1975-03-23")
     assert result is None
+
+
+def test_stage_artwork_keeps_first_backup_on_repeated_replacement(tmp_path):
+    tagger = _make_tagger([], {})
+    tagger.folderpath = tmp_path
+    tagger.artworkpath = tmp_path / "source.jpg"
+    cover = tmp_path / "folder.jpg"
+    backup = tmp_path / "folder.jpg.old"
+    cover.write_bytes(b"original")
+
+    for image in (b"first replacement", b"second replacement"):
+        tagger.artworkpath.write_bytes(image)
+        assert tagger._stage_artwork(True, True) == str(cover)
+        assert cover.read_bytes() == image
+        assert backup.read_bytes() == b"original"
+
+    cover_stat = cover.stat()
+    assert tagger._stage_artwork(True, True) == str(cover)
+    assert cover.stat().st_mtime_ns == cover_stat.st_mtime_ns
+    assert list(tmp_path.glob("folder.jpg.old*")) == [backup]
