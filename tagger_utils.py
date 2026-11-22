@@ -127,6 +127,7 @@ class TitleBuilder:
             "sbd": prefs.get("soundboard_abbrev"),
             "aud": prefs.get("aud_abbrev"),
             "matrix": prefs.get("matrix_abbrev"),
+            "mtx": prefs.get("matrix_abbrev"),
             "ultramatrix": prefs.get("ultramatrix_abbrev"),
         }
         return abbr_map.get(rec_type.lower()) or rec_type
@@ -137,7 +138,7 @@ class TitleBuilder:
     ) -> tuple[str, bool]:
         """Return (bitrate_str, include_bitrate_final)."""
         br = f"{info.bits_per_sample}-{str(info.sample_rate).rstrip('0')}"
-        if not16_only and str(info.bits_per_sample) == "16":
+        if not16_only and info.bits_per_sample <= 16:
             include_bitrate = False
         return br, include_bitrate
 
@@ -158,7 +159,12 @@ class TitleBuilder:
     @staticmethod
     def _build_format(order, prefix, suffix) -> Optional[str]:
         if order and len(order) == len(prefix) == len(suffix):
-            return "".join(f"{p}{{{o}}}{s}" for o, p, s in zip(order, prefix, suffix))
+            return "".join(
+                p.replace("{", "{{").replace("}", "}}")
+                + "{" + o + "}"
+                + s.replace("{", "{{").replace("}", "}}")
+                for o, p, s in zip(order, prefix, suffix)
+            )
         return None
 
     def generate_title(self) -> str:
@@ -172,7 +178,7 @@ class TitleBuilder:
 
         city, venue, shnid = (
             self.etreerec.city,
-            self.etreerec.etreevenue,
+            getattr(self.etreerec, "venue", None) or self.etreerec.etreevenue,
             self.etreerec.id,
         )
         order = (tag.get("order") or []).copy()
@@ -187,6 +193,7 @@ class TitleBuilder:
         )
 
         checks = {
+            "recording_type": tag.get("include_recording_type", True) and bool(recording_type),
             "venue": tag.get("include_venue", True) and bool(venue),
             "city": tag.get("include_city", True) and bool(city),
             "shnid": tag.get("include_shnid", True),
@@ -213,12 +220,17 @@ class TitleBuilder:
                 )
 
         # Fallback
-        album = f"{show_date} {venue} {city} "
-        if recording_type:
-            album += f"{recording_type} "
-        if include_bitrate and self.folder.musicfiles:
-            album += f"[{bitrate}] "
-        return album + f"({shnid})"
+        parts = [show_date]
+        for field, value in (
+            ("city", city),
+            ("venue", venue),
+            ("recording_type", recording_type),
+            ("shnid", f"({shnid})"),
+            ("bitrate", f"[{bitrate}]"),
+        ):
+            if checks[field]:
+                parts.append(str(value))
+        return " ".join(parts)
 
 
 class DefaultEmpty(dict):

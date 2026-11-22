@@ -6,8 +6,8 @@ from datetime import datetime
 from pathlib import Path
 from time import perf_counter
 
-from services.bootstrap import create_user_config, user_config_path
-from services.config import LIBRARY_LOG_PATH, SHIPPED_CONFIG, load_app_config
+from services.bootstrap import create_user_config, upgrade_user_config, user_config_path
+from services.config import ConfigUpgradeRequired, LIBRARY_LOG_PATH, SHIPPED_CONFIG, load_app_config
 
 from services.exceptions import FolderProcessingError, TaggerError
 from tagger import ConcertTagger, SQLiteEtreeDB
@@ -114,7 +114,18 @@ def main(argv: list[str] | None = None) -> int:
                 args.log_file,
             )
             return 0
-        config = load_app_config(path, user_config=managed_config)
+        try:
+            config = load_app_config(path, user_config=managed_config)
+        except ConfigUpgradeRequired as exc:
+            if not sys.stdin.isatty():
+                print(
+                    f"{exc} File: {path}. "
+                    "Run the same command in an interactive terminal.",
+                    file=sys.stderr,
+                )
+                return 1
+            upgrade_user_config(path)
+            return 0
     except (KeyboardInterrupt, EOFError):
         print("\nSetup cancelled.", file=sys.stderr)
         return 1

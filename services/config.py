@@ -1,13 +1,25 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
 import tomllib
 
-CONFIG_VERSION = 1
+CONFIG_VERSION = 2
 SHIPPED_CONFIG = Path(__file__).resolve().parents[1] / "config.toml"
 LIBRARY_LOG_PATH = Path("tagger_logs") / "tag_log.log"
+
+
+class ConfigUpgradeRequired(ValueError):
+    """A saved configuration is older than the current schema."""
+
+    def __init__(self, source_version: int, target_version: int):
+        self.source_version = source_version
+        self.target_version = target_version
+        super().__init__(
+            f"Configuration version {source_version} needs an upgrade to {target_version}."
+        )
 
 
 @dataclass
@@ -30,13 +42,15 @@ class CoverConfig:
 @dataclass
 class PreferencesConfig:
     year_format: str = "YYYY"
-    segue_string: str = "->"
+    segue_string: str = ">"
     soundboard_abbrev: str = "SBD"
     aud_abbrev: str = "AUD"
     matrix_abbrev: Optional[str] = None
     ultramatrix_abbrev: Optional[str] = None
     verbose_logging: bool = False
     enable_filename_fallback: bool = False
+    write_date: bool = False
+    write_date_parts: bool = False
 
 
 @dataclass
@@ -46,6 +60,7 @@ class AlbumTagConfig:
     include_shnid: bool = True
     include_venue: bool = False
     include_city: bool = True
+    include_recording_type: bool = True
     order: List[str] = field(
         default_factory=lambda: [
             "show_date",
@@ -111,6 +126,8 @@ def _read_config(path: Path, require_version: bool) -> dict:
     with open(path, "rb") as fh:
         data = tomllib.load(fh)
     version = data.get("config_version")
+    if type(version) is int and 1 <= version < CONFIG_VERSION:
+        raise ConfigUpgradeRequired(version, CONFIG_VERSION)
     if (version is not None or require_version) and (
         type(version) is not int or version != CONFIG_VERSION
     ):
@@ -201,14 +218,21 @@ def _validate_config(data: dict) -> None:
         raise ValueError("supportfiles must map tool names to paths.")
 
 
-def load_app_config(path: str | Path, *, user_config: bool = False) -> AppConfig:
+def load_app_config(
+    path: str | Path, *, user_config: bool = False
+) -> AppConfig:
     path = Path(path).expanduser().absolute()
     data = _read_config(path, require_version=user_config)
-    if user_config or "config_version" in data:
+    return build_app_config(path, data, inherit_defaults=user_config or "config_version" in data)
+
+
+def build_app_config(path: Path, data: dict, *, inherit_defaults: bool) -> AppConfig:
+    if inherit_defaults:
         baseline = _read_config(SHIPPED_CONFIG, require_version=False)
         _resolve_paths(baseline, SHIPPED_CONFIG.parent)
-        _resolve_paths(data, path.parent)
-        data = _merge(baseline, data)
+        overrides = deepcopy(data)
+        _resolve_paths(overrides, path.absolute().parent)
+        data = _merge(baseline, overrides)
     _validate_config(data)
 
     pref_defaults = PreferencesConfig()
