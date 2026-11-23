@@ -83,6 +83,13 @@ accept a displayed default. Setup saves your preferences and prints the full
 path. You can edit that TOML file in a text editor. Setup leaves show files
 untouched.
 
+The **Album tag** section lets you choose the fields in the FLAC album name
+and previews the result. Advanced options cover field order, separators, and
+recording-type labels such as SBD, AUD, MTX, and Ultramatrix. **Track titles**
+offers a segue marker and filename fallback. **Performance date tags** can
+write the catalog date to `DATE` and optionally to separate `YEAR`, `MONTH`,
+and `DAY` fields.
+
 The saved file is `%APPDATA%\EtreeTag\config.toml` on Windows and
 `$XDG_CONFIG_HOME/etree-tag/config.toml` on other platforms, with
 `~/.config/etree-tag/config.toml` used when XDG_CONFIG_HOME is unset.
@@ -95,17 +102,27 @@ directly, pass `--config PATH`. To adopt existing choices into the managed
 configuration, transfer them to the file created by setup, keeping its
 `config_version` and making any paths relative to that file or absolute.
 
+If your saved TOML has `config_version = 1`, run `python cli.py` in an
+interactive terminal. Setup keeps your existing library and artwork preferences
+and asks the Album tag, Track titles, and Performance date questions. Press
+Enter to keep the displayed values. After saving version 2, the CLI prints
+the backup path and exits before tagging. The backup retains the original
+formatting and comments. If you skip a release, setup applies each available
+config upgrade in order and saves only after all steps succeed.
+
 ## Configuration
 `config.toml` drives behaviour. Key settings:
 
 ```toml
 [preferences]
 year_format = "YYYY"
-segue_string = "->"
+segue_string = ">"
 soundboard_abbrev = "SBD"
 aud_abbrev = "AUD"
 verbose_logging = false
 enable_filename_fallback = false  # opt-in for filename-derived metadata
+write_date = false                # write the performance date to DATE
+write_date_parts = false          # also write YEAR, MONTH, and DAY where known
 
 [album_tag]
 include_bitrate = true
@@ -113,6 +130,7 @@ include_bitrate_not16_only = true
 include_shnid = true
 include_venue = false
 include_city = true
+include_recording_type = true
 order = ["show_date", "city", "venue", "recording_type", "shnid", "bitrate"]
 
 [cover]

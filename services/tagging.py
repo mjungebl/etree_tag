@@ -1,4 +1,6 @@
 import logging
+import re
+from datetime import date, datetime
 from typing import Optional, Tuple
 
 from mutagen.flac import FLAC
@@ -11,7 +13,60 @@ logger = logging.getLogger(__name__)
 WorkerResult = Tuple[str, bool, Optional[str]]
 
 
-def tag_file_worker(args) -> WorkerResult:
+def performance_date_tags(
+    raw: str | None, write_date: bool, write_parts: bool
+) -> dict[str, str]:
+    """Build tags from the known components of the catalog date."""
+    if not raw or not (write_date or write_parts):
+        return {}
+    raw = raw.strip()
+    match = re.fullmatch(
+        r"(\d{4})(?:[-./](\d{1,2}|[xX]{1,2})(?:[-./](\d{1,2}|[xX]{1,2}))?)?",
+        raw,
+    )
+    if match:
+        year, month, day = [
+            int(part) if part and part.isdigit() else None for part in match.groups()
+        ]
+        try:
+            date(year, 1 if month is None else month, 1 if day is None else day)
+        except ValueError:
+            return {}
+        if day is not None and month is None:
+            return {}
+    else:
+        if re.fullmatch(r"\d{1,2}[-./]\d{1,2}[-./]\d{2}", raw):
+            short_year = int(raw[-2:])
+            year = short_year + (
+                2000 if short_year <= datetime.now().year % 100 else 1900
+            )
+            raw = f"{raw[:-2]}{year}"
+        for fmt in (
+            "%m-%d-%Y",
+            "%m/%d/%Y",
+            "%m.%d.%Y",
+        ):
+            try:
+                parsed = datetime.strptime(raw, fmt)
+            except ValueError:
+                continue
+            year, month, day = parsed.year, parsed.month, parsed.day
+            break
+        else:
+            return {}
+
+    parts = {"year": f"{year:04d}"}
+    if month is not None:
+        parts["month"] = f"{month:02d}"
+    if day is not None:
+        parts["day"] = f"{day:02d}"
+    tags = dict(parts) if write_parts else {}
+    if write_date:
+        tags["date"] = "-".join(parts.values())
+    return tags
+
+
+def tag_file_worker(args, date_tags: dict[str, str] | None = None) -> WorkerResult:
     """Worker function to add artwork and metadata to a single FLAC file."""
     (
         file_path,
@@ -34,7 +89,10 @@ def tag_file_worker(args) -> WorkerResult:
 
         if clear_existing_tags:
             for key in list(audio.keys()):
-                if key.lower() == "metadata_block_picture":
+                if key.lower() == "metadata_block_picture" or (
+                    date_tags is not None
+                    and key.lower() in {"date", "year", "month", "day"}
+                ):
                     continue
                 del audio[key]
             logger.debug("Cleared tags from file: %s", file_name)
@@ -47,6 +105,8 @@ def tag_file_worker(args) -> WorkerResult:
         audio["comment"] = source
         if genretag:
             audio["genre"] = genretag
+        for key, value in (date_tags or {}).items():
+            audio[key] = value
 
         if title:
             audio["title"] = title

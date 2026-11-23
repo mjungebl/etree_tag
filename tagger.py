@@ -27,7 +27,7 @@ from services.exceptions import (
 from tagger_utils import TitleBuilder
 from services.metadata import MetadataImporter
 from services.persistence import TrackMetadataRepository
-from services.tagging import tag_file_worker, tag_artwork_worker
+from services.tagging import performance_date_tags, tag_file_worker, tag_artwork_worker
 
 logger = logging.getLogger(__name__)
 
@@ -485,6 +485,12 @@ class ConcertTagger:
 
         segue = self.config.preferences.segue_string or ">"
         gazinta_abbrev = segue
+        prefs = self.config.preferences
+        date_tags = (
+            performance_date_tags(self.etreerec.date, prefs.write_date, prefs.write_date_parts)
+            if prefs.write_date or prefs.write_date_parts
+            else None
+        )
 
         args_list = []
         for file in self.folder.musicfiles:
@@ -520,7 +526,8 @@ class ConcertTagger:
         pbar = tqdm(total=tickers, desc="Tagging")
         with ThreadPoolExecutor(max_workers=num_threads) as executor:
             futures = {
-                executor.submit(tag_file_worker, args): args[1] for args in args_list
+                executor.submit(tag_file_worker, args, date_tags=date_tags): args[1]
+                for args in args_list
             }
             for future in as_completed(futures):
                 file_name = futures[future]
