@@ -5,7 +5,7 @@ from typing import Optional, Tuple
 
 from mutagen.flac import FLAC
 
-from services.artwork import apply_artwork_to_audio
+from services.artwork import apply_artwork_to_audio, set_audio_artwork
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +68,18 @@ def performance_date_tags(
 
 def tag_file_worker(args, date_tags: dict[str, str] | None = None) -> WorkerResult:
     """Worker function to add artwork and metadata to a single FLAC file."""
+    file_path, file_name = args[:2]
+    try:
+        audio = FLAC(file_path)
+        prepare_file_tags(audio, args, date_tags)
+        audio.save()
+        return (file_name, True, None)
+    except Exception as exc:  # pragma: no cover - worker failure path
+        logger.error("Error tagging file %s: %s", file_name, exc)
+        return (file_name, False, str(exc))
+
+
+def prepare_file_tags(audio, args, date_tags, *, image_data: bytes | None = None):
     (
         file_path,
         file_name,
@@ -83,47 +95,40 @@ def tag_file_worker(args, date_tags: dict[str, str] | None = None) -> WorkerResu
         title,
     ) = args
 
-    try:
-        audio = FLAC(file_path)
+    if image_data is None:
         apply_artwork_to_audio(audio, file_name, artwork_path, clear_existing_artwork)
+    else:
+        set_audio_artwork(audio, file_name, artwork_path, image_data, clear_existing_artwork)
 
-        if clear_existing_tags:
-            for key in list(audio.keys()):
-                if key.lower() == "metadata_block_picture" or (
-                    date_tags is not None
-                    and key.lower() in {"date", "year", "month", "day"}
-                ):
-                    continue
-                del audio[key]
-            logger.debug("Cleared tags from file: %s", file_name)
+    if clear_existing_tags:
+        for key in list(audio.keys()):
+            if key.lower() == "metadata_block_picture" or (
+                date_tags is not None
+                and key.lower() in {"date", "year", "month", "day"}
+            ):
+                continue
+            del audio[key]
+        logger.debug("Cleared tags from file: %s", file_name)
 
-        audio["album"] = album
-        audio["artist"] = artist
-        audio["albumartist"] = artist
-        if "album artist" in audio:
-            del audio["album artist"]
-        audio["comment"] = source
-        if genretag:
-            audio["genre"] = genretag
-        for key, value in (date_tags or {}).items():
-            audio[key] = value
+    audio["album"] = album
+    audio["artist"] = artist
+    audio["albumartist"] = artist
+    if "album artist" in audio:
+        del audio["album artist"]
+    audio["comment"] = source
+    if genretag:
+        audio["genre"] = genretag
+    for key, value in (date_tags or {}).items():
+        audio[key] = value
 
-        if title:
-            audio["title"] = title
-            if disc:
-                audio["discnumber"] = disc
-            if tracknum:
-                audio["tracknumber"] = tracknum
-        else:
-            logger.error(
-                "Error tagging song details %s: No matching track data found in database",
-                file_path,
-            )
-        audio.save()
-        return (file_name, True, None)
-    except Exception as exc:  # pragma: no cover - worker failure path
-        logger.error("Error tagging file %s: %s", file_name, exc)
-        return (file_name, False, str(exc))
+    if title:
+        audio["title"] = title
+        if disc:
+            audio["discnumber"] = disc
+        if tracknum:
+            audio["tracknumber"] = tracknum
+    else:
+        logger.warning("No matching track data found for %s", file_path)
 
 
 def tag_artwork_worker(args) -> WorkerResult:

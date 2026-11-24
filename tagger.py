@@ -8,10 +8,8 @@ from concurrent.futures import (
     ThreadPoolExecutor, 
     as_completed,
 )
-import shutil
 import re
 from datetime import datetime
-from tempfile import NamedTemporaryFile
 from typing import Optional
 from services.config import (
     AppConfig, 
@@ -27,6 +25,7 @@ from services.exceptions import (
 from tagger_utils import TitleBuilder
 from services.metadata import MetadataImporter
 from services.persistence import TrackMetadataRepository
+from services.preview import ArtworkPlan, preview_and_apply
 from services.tagging import performance_date_tags, tag_file_worker, tag_artwork_worker
 
 logger = logging.getLogger(__name__)
@@ -137,7 +136,8 @@ def remove_match_from_lists(lists, item):
 class ConcertTagger:
 
     def __init__(
-        self, concert_folder: str, config: dict, db: SQLiteEtreeDB, debug: bool = False
+        self, concert_folder: str, config: dict, db: SQLiteEtreeDB, debug: bool = False,
+        *, rename_folder: bool = True,
     ):
         """
         Initialize the ConcertTagger with a concert folder and a configuration dictionary.
@@ -177,16 +177,18 @@ class ConcertTagger:
         self.NoMatch = False
         try:
             self.etreerec = self.folder._find_matching_recording(debug=debug)
-        except Exception as exc:
+        except Exception:
+            if not rename_folder:
+                raise
             logger.exception(
                 "Error locating matching recording for %s",
                 self.folderpath.as_posix(),
             )
-            self.NoMatch = True
+            self.etreerec = None
 
         if not self.etreerec:
             self.NoMatch = True
-        else:
+        elif rename_folder:
             # standardize folder name if artist abbreviation and year are not
             # in the expected format
             try:
@@ -312,75 +314,16 @@ class ConcertTagger:
         self, clear_existing_artwork: bool, retain_existing_artwork: bool
     ) -> Optional[str]:
         """Prepare folder artwork and return the image path to use during tagging."""
-        if not self.artworkpath:
-            logger.debug("No artwork file found to tag.")
-            return None
-
-        artwork_path_str = str(self.artworkpath)
-        folder_path_str = str(self.folderpath)
-        artwork_ext = os.path.splitext(artwork_path_str)[1].lower()
-        artwork_formats = ["jpg", "jpeg", "png", "gif", "bmp", "webp"]
-
-        existing_artworks = [
-            os.path.join(folder_path_str, f"folder.{ext}")
-            for ext in artwork_formats
-            if os.path.exists(os.path.join(folder_path_str, f"folder.{ext}"))
-        ]
-
-        if existing_artworks:
-            logger.debug("Existing artwork files found: %s", existing_artworks)
-            if not clear_existing_artwork:
-                logger.debug(
-                    "Existing artwork found (%s), and replacement is disabled. Skipping new artwork.",
-                    existing_artworks,
-                )
-                return existing_artworks[0]
-
-            dest_ext = os.path.splitext(existing_artworks[0])[1].lower()
-        else:
-            dest_ext = artwork_ext
-
-        dest_file = os.path.join(folder_path_str, f"folder{dest_ext}")
-        temporary = None
         try:
-            image_data = Path(artwork_path_str).read_bytes()
-            if existing_artworks and Path(dest_file).read_bytes() == image_data:
-                logger.debug("Folder artwork already matches %s", artwork_path_str)
-                return dest_file
-
-            with NamedTemporaryFile(dir=folder_path_str, delete=False) as staged:
-                temporary = Path(staged.name)
-                staged.write(image_data)
-
-            for existing_artwork in existing_artworks:
-                backup_name = f"{existing_artwork}.old"
-                if retain_existing_artwork and not os.path.lexists(backup_name):
-                    os.rename(existing_artwork, backup_name)
-                    logger.debug("Renamed %s to %s", existing_artwork, backup_name)
-                elif existing_artwork != dest_file:
-                    os.remove(existing_artwork)
-                    logger.debug("Deleted existing artwork %s", existing_artwork)
-
-            os.replace(temporary, dest_file)
-            logger.info("Copied new artwork to %s.", dest_file)
-        except FileNotFoundError as e:
-            logger.error(
-                "Error copying artwork file %s to %s: %s",
-                artwork_path_str,
-                dest_file,
-                e,
+            plan = ArtworkPlan.build(
+                self.folderpath, self.artworkpath,
+                clear_existing_artwork, retain_existing_artwork,
             )
+            plan.apply()
+            return str(plan.destination) if plan.destination else None
+        except FileNotFoundError as exc:
+            logger.error("Error preparing artwork for %s: %s", self.folderpath, exc)
             return None
-        finally:
-            if temporary is not None:
-                temporary.unlink(missing_ok=True)
-
-        return dest_file
-
-
-
-
-
 
     def tag_artwork(self, num_threads: int = None):
         """
@@ -450,8 +393,7 @@ class ConcertTagger:
             num_threads (int, optional): Number of threads to use. Defaults to os.cpu_count()-1.
         """
 
-        tb = TitleBuilder(self.etreerec, self.folder, self.config.to_mapping())
-        album = tb.generate_title()
+        album = self._album_title()
         logger.debug("Album title resolved as %s", album)
         if not self.etreerec.tracks:
             logger.warning(
@@ -470,12 +412,6 @@ class ConcertTagger:
             self.folderpath.as_posix(),
         )
 
-        genretag = None
-        if self.etreerec.date:
-            if len(self.etreerec.date) > 4 and self.etreerec.artist == "Grateful Dead":
-                album_year = extract_year(self.etreerec.date)
-                genretag = f"gd{str(album_year)}"
-
         clear_existing_artwork = self.config.cover.clear_existing_artwork
         retain_existing_artwork = self.config.cover.retain_existing_artwork
 
@@ -483,41 +419,9 @@ class ConcertTagger:
             clear_existing_artwork, retain_existing_artwork
         )
 
-        segue = self.config.preferences.segue_string or ">"
-        gazinta_abbrev = segue
-        prefs = self.config.preferences
-        date_tags = (
-            performance_date_tags(self.etreerec.date, prefs.write_date, prefs.write_date_parts)
-            if prefs.write_date or prefs.write_date_parts
-            else None
+        args_list, date_tags = self._file_tag_arguments(
+            album, artwork_path_str, clear_existing_tags
         )
-
-        args_list = []
-        for file in self.folder.musicfiles:
-            song_info = self.etreerec.get_track_by_checksum(file.checksum)
-            tracknum, disc, title = None, None, None
-            if song_info:
-                title = song_info.title
-                if song_info.gazinta:
-                    title = f"{title} {gazinta_abbrev}"
-                tracknum, disc = song_info.tracknum, song_info.disc
-            args_list.append(
-                (
-                    file.path,
-                    file.name,
-                    artwork_path_str,
-                    clear_existing_artwork,
-                    clear_existing_tags,
-                    album,
-                    genretag,
-                    self.etreerec.artist,
-                    self.etreerec.source,
-                    tracknum,
-                    disc,
-                    title,
-                )
-            )
-
         if num_threads is None:
             cpu_count = os.cpu_count() or 1
             num_threads = max(1, cpu_count - 1)
@@ -533,13 +437,60 @@ class ConcertTagger:
                 file_name = futures[future]
                 pbar.update(n=1)
                 try:
-                    name, success, error = future.result()
-                except Exception as exc:  # pragma: no cover - worker failure path
+                    future.result()
+                except Exception:  # pragma: no cover - worker failure path
                     logger.exception(
                         "Multithreaded tag_file_worker call failed for %s",
                         file_name,
                     )
         pbar.close()
+
+    def _album_title(self):
+        return TitleBuilder(self.etreerec, self.folder, self.config.to_mapping()).generate_title()
+
+    def _file_tag_arguments(self, album, artwork_path_str, clear_existing_tags, *, tracks=None):
+        genretag = None
+        if self.etreerec.date:
+            if len(self.etreerec.date) > 4 and self.etreerec.artist == "Grateful Dead":
+                album_year = extract_year(self.etreerec.date)
+                genretag = f"gd{str(album_year)}"
+
+        find_track = self.etreerec.get_track_by_checksum if tracks is None else tracks.get
+        segue = self.config.preferences.segue_string or ">"
+        prefs = self.config.preferences
+        date_tags = (
+            performance_date_tags(self.etreerec.date, prefs.write_date, prefs.write_date_parts)
+            if prefs.write_date or prefs.write_date_parts
+            else None
+        )
+
+        args_list = []
+        for file in self.folder.musicfiles:
+            song_info = find_track(file.checksum)
+            tracknum, disc, title = None, None, None
+            if song_info:
+                title = song_info.title
+                if song_info.gazinta:
+                    title = f"{title} {segue}"
+                tracknum, disc = song_info.tracknum, song_info.disc
+            args_list.append(
+                (
+                    file.path,
+                    file.name,
+                    artwork_path_str,
+                    self.config.cover.clear_existing_artwork,
+                    clear_existing_tags,
+                    album,
+                    genretag,
+                    self.etreerec.artist,
+                    self.etreerec.source,
+                    tracknum,
+                    disc,
+                    title,
+                )
+            )
+
+        return args_list, date_tags
 
     def tag_shows_debug(
         concert_folders: list,
@@ -584,6 +535,8 @@ class ConcertTagger:
         etree_db: SQLiteEtreeDB,
         config,
         clear_existing_tags: bool = False,
+        *,
+        manifest_path: Path | None = None,
     ):
         """
         Tags concert folders with metadata from the etree database.
@@ -595,6 +548,20 @@ class ConcertTagger:
         Raises:
             FolderProcessingError: When one or more folders fail to process.
         """
+        if manifest_path is not None:
+            etree_db.defer_remote_imports = True
+            try:
+                return preview_and_apply(
+                    [Path(folder).resolve() for folder in concert_folders],
+                    lambda folder: ConcertTagger(str(folder), config, etree_db, rename_folder=False),
+                    clear_existing_tags,
+                    manifest_path,
+                    etree_db,
+                )
+            finally:
+                etree_db.conn.rollback()
+                etree_db.pending_remote_shnids.clear()
+                etree_db.defer_remote_imports = False
         folder_count = len(concert_folders)
         errors: list[tuple[str, Exception]] = []
 

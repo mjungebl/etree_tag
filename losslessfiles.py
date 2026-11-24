@@ -1,3 +1,4 @@
+import logging
 import os
 import subprocess
 from pathlib import Path
@@ -294,7 +295,7 @@ def parse_flac_fingerprint(filecontent: str) -> list[tuple[str, str]]:
             audio_filename, audio_checksum = line.rsplit(":", 1)
             records.append((audio_filename.strip(), audio_checksum.strip()))
         else:
-            print(f"Unexpected flac fingerprint line format: {line}")
+            logging.debug("Unexpected FLAC fingerprint line format: %s", line)
     return records
 
 
@@ -314,7 +315,7 @@ def parse_st5(filecontent: str) -> list[tuple[str, str]]:
             checksum, filename = line.split(maxsplit=1)
             records.append((filename.strip(), checksum.strip()))
         else:
-            print(f"Unexpected st5 line format: {line}")
+            logging.debug("Unexpected ST5 line format: %s", line)
 
     return records
 
@@ -333,5 +334,5 @@ def parse_md5(filecontent: str) -> list[tuple[str, str]]:
             checksum, filename = line.split(maxsplit=1)
             records.append((filename.strip("* ").strip(), checksum.strip()))
         else:
-            print(f"Unexpected md5 line format: {line}")
+            logging.debug("Unexpected MD5 line format: %s", line)
     return records

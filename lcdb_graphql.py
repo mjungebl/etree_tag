@@ -4,6 +4,30 @@ from typing import Any, Dict, List
 GRAPHQL_ENDPOINT = "https://graphql.lcdb.org"
 
 
+class LCDBLookupError(Exception):
+    """The remote catalog could not answer a lookup."""
+
+
+def _query_catalog(payload: dict) -> dict:
+    try:
+        response = requests.post(GRAPHQL_ENDPOINT, json=payload, timeout=10)
+        response.raise_for_status()
+    except requests.HTTPError as exc:
+        raise LCDBLookupError(f"Etree catalog returned HTTP {exc.response.status_code}") from exc
+    except requests.Timeout as exc:
+        raise LCDBLookupError("Etree catalog lookup timed out") from exc
+    except requests.RequestException as exc:
+        raise LCDBLookupError(f"Could not reach the Etree catalog: {exc}") from exc
+
+    try:
+        result = response.json()
+    except ValueError as exc:
+        raise LCDBLookupError("Etree catalog returned a response that was not valid JSON") from exc
+    if not isinstance(result, dict) or result.get("errors") or not isinstance(result.get("data"), dict):
+        raise LCDBLookupError("Etree catalog returned an invalid GraphQL result")
+    return result
+
+
 CHECKSUM_QUERY = """
 query ChecksumsQuery ($checksum:String!) {
   checksums(filter: {body: {contains: $checksum}}) {
@@ -87,9 +111,7 @@ def find_shnid_by_checksum(checksum: str) -> Dict[str, Any]:
             "checksum": checksum,
         },
     }
-    response = requests.post(GRAPHQL_ENDPOINT, json=payload)
-    response.raise_for_status()
-    return response.json()
+    return _query_catalog(payload)
 
 
 def parse_shnid_by_checksum(query_result: dict) -> List[int]:
@@ -124,9 +146,7 @@ def find_performance_by_shnid(shnid: int) -> Dict[str, Any]:
             "sourceId": shnid,
         },
     }
-    response = requests.post(GRAPHQL_ENDPOINT, json=payload)
-    response.raise_for_status()
-    return response.json()
+    return _query_catalog(payload)
 
 
 def parse_performance_by_shnid(query_result: dict):
@@ -183,9 +203,7 @@ def find_checksums_by_shnid(shnid: int) -> Dict[str, Any]:
             "sourceId": shnid,
         },
     }
-    response = requests.post(GRAPHQL_ENDPOINT, json=payload)
-    response.raise_for_status()
-    return response.json()
+    return _query_catalog(payload)
 
 
 def parse_checksums_by_shnid(query_result: dict, shnid: int, checksums: dict):

@@ -84,7 +84,10 @@ def test_first_run_only_saves_config_and_next_run_uses_preferences(
     assert verbose is True
     assert remaining == [
         str(database),
-        ([show.as_posix()], {"clear_existing_tags": False}),
+        ([show.as_posix()], {
+            "clear_existing_tags": False,
+            "manifest_path": log.parent / f"{timestamp}_changes.txt",
+        }),
         "closed",
     ]
 

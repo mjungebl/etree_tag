@@ -59,10 +59,20 @@ python cli.py --config config.toml --database db/etree_scrape.db \
 CLI options of note:
 - `--parent-folder`: expand immediate subdirectories and process each as a show.
 - `--clear-tags`: drop all non-artwork FLAC tags before writing new metadata.
-- `--log-file`: where structured logs land (console output mirrors INFO by default).
+- `--log-file`: where structured run diagnostics and per-show tracebacks are saved.
 - `--config`, `--database`: override the default config or SQLite locations.
 
 Exit codes are non-zero on failures so the command works well in batch scripts.
+
+When there are changes to approve, the CLI prints a preview and writes a timestamped
+`*_changes.txt` manifest alongside the run log. The preview counts shows that
+will change, are already tagged per preferences, or are expected to fail.
+It lists each blocked show with its reason. Review the manifest
+for failure reasons, FLAC tag edits, artwork changes and backups, folder
+renames, and catalog imports.
+Type exactly `yes` to apply the plan. Enter, any other answer, or end of input
+cancels the plan. The CLI skips unchanged FLACs and shows whose files change
+after the preview.
 
 ### Logging
 Setup defaults the base log path to `tagger_logs/tag_log.log` under your saved

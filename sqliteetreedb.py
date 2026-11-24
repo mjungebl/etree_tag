@@ -20,6 +20,8 @@ class SQLiteEtreeDB:
         self.db_path = db_path
         self.conn = sqlite3.connect(self.db_path)
         self.cursor = self.conn.cursor()
+        self.defer_remote_imports = False
+        self.pending_remote_shnids = []
         self.initialize_eventdb()
         self.translations = self.build_title_transformations_dict()
         # Set up logging
@@ -312,7 +314,7 @@ class SQLiteEtreeDB:
             )
             self.conn.rollback()
 
-    def store_signatures(self, records):
+    def store_signatures(self, records, *, commit=True):
         """Stores a list of signature records into the 'signatures' table."""
         try:
             md5key = records[0][1]
@@ -325,12 +327,15 @@ class SQLiteEtreeDB:
             """,
                 records,
             )
-            self.conn.commit()
+            if commit:
+                self.conn.commit()
 
         except sqlite3.Error as e:
+            if not commit:
+                raise
             logging.error(f"SQLite error in store_signatures: {e}")
 
-    def store_artist_events(self, records):
+    def store_artist_events(self, records, *, commit=True):
         """Stores or updates artist event records in 'shnlist' table."""
         shnid = None
         try:
@@ -371,9 +376,12 @@ class SQLiteEtreeDB:
                     logging.info(f"Added Shnid: {shnid} to database")
                 else:
                     logging.error("No shnid found in records")
-            self.conn.commit()
+            if commit:
+                self.conn.commit()
 
         except sqlite3.Error as e:
+            if not commit:
+                raise
             logging.error(f"SQLite error in store_artist_events: {e}")
 
     def get_shnid_info(self, shnid):
@@ -595,7 +603,8 @@ class SQLiteEtreeDB:
         return cleaned, gazinta
 
     def insert_track_metadata(
-        self, shnid, records, overwrite=False, md5key: int = None, debug=False
+        self, shnid, records, overwrite=False, md5key: int = None, debug=False, *,
+        raise_on_error=False,
     ):
         """
         Inserts a list of track_metadata records for the given shnid.
@@ -711,6 +720,8 @@ class SQLiteEtreeDB:
         except Exception as e:
             logging.error(f"Error inserting track metadata for shnid {shnid}: {e}")
             self.conn.rollback()
+            if raise_on_error:
+                raise
 
     def get_track_metadata(self, shnid: int, md5key: int = None):
         """
@@ -749,7 +760,7 @@ class SQLiteEtreeDB:
             logging.error(f"Error retrieving track metadata for shnid {shnid}: {e}")
             return []
 
-    def insert_checksum_file(self, record):
+    def insert_checksum_file(self, record, *, commit=True):
         """
         Inserts a single record into the checksum_files table.
 
@@ -772,8 +783,11 @@ class SQLiteEtreeDB:
                 VALUES (?, ?, ?, ?)
             """
             self.cursor.execute(insert_sql, record)
-            self.conn.commit()
+            if commit:
+                self.conn.commit()
         except Exception as e:
+            if not commit:
+                raise
             logging.error(f"Error inserting checksum_files record {record}: {e}")
             self.conn.rollback()
 
@@ -1024,36 +1038,33 @@ class SQLiteEtreeDB:
         Returns:
         """
         try:
-            print(f"running get_remote_checksum_matches for {len(checksums)} checksums")
+            logging.debug("Looking up Etree matches for %d checksums", len(checksums))
             checksums_found = {}
-            performances_found = {}
             shnids_to_add = []
             checksumfiles = {}
             checksumfilecontent = {}
             # use the first checksum in the list to see if there are any remote checksums
             checksum = checksums[0] if checksums else None
             if checksum is None:
-                print("No checksums provided")
+                logging.debug("No checksums provided")
                 return None
             match_dict = lcdb.find_shnid_by_checksum(checksum)
             if match_dict is None:
-                print("No remote match found for first checksum")
+                logging.debug("No remote match found for first checksum")
                 return None
             shnids = lcdb.parse_shnid_by_checksum(match_dict)
             if shnids is None:
-                print("No remote match shnids found")
+                logging.debug("No remote match shnids found")
                 return None
             existing_events = self.get_existing_events()
 
             for shnid in shnids:
                 if shnid in existing_events:
-                    print(f"Skipping existing shnid {shnid}")
+                    logging.debug(f"Skipping existing shnid {shnid}")
                     continue
                 perf = lcdb.find_performance_by_shnid(shnid)
-                # print(f"{perf=}")
                 performance = lcdb.parse_performance_by_shnid(perf)
                 date = performance.get("date")
-                print(f"{date=}")
                 if date:
                     date = self.convert_date_format(date)
                 venue = performance.get("venue", "")
@@ -1065,7 +1076,7 @@ class SQLiteEtreeDB:
                 artist_id = performance.get("artist_id", None)
                 artist_name = performance.get("artist_name", "")
                 source = self.fix_source_column(source, artist_name)
-                print(
+                logging.debug(
                     f"Found remote performance for shnid {shnid}: {date} {venue_source} {circdate} {source}"
                 )
                 # INSERT INTO shnlist (Date, VenueSource, CircDateAddedSource, ChecksumsSource, Source, shnid,artist_id,Venue,City)
@@ -1080,11 +1091,8 @@ class SQLiteEtreeDB:
                 #     ]
                 #     FINAL_COLUMNS = DESIRED_COLUMNS + ["shnid"]
                 #
-                print(f"{performances_found=}")
                 chk = lcdb.find_checksums_by_shnid(shnid)
-                # print(f"{chk=}")
                 lcdb.parse_checksums_by_shnid(chk, shnid, checksums_found)
-                # print(f"checksums_found: {checksums_found}")
                 for shnid in checksums_found.keys():
                     checksum_dict = checksums_found[shnid]
                     fp_ext = ""
@@ -1115,7 +1123,6 @@ class SQLiteEtreeDB:
                             raise ValueError(
                                 f"All Three parsing methods failed for {shnid=}"
                             )
-                        # print(f"Parsed {len(fingerprint_tuples)} fingerprints for shnid {shnid} md5key {md5key}")
 
                         records = []
                         if fingerprint_tuples:
@@ -1142,28 +1149,37 @@ class SQLiteEtreeDB:
                                 f"{desc}.{fp_ext}",
                             ]
                             checksumfilecontent[md5key] = records
-                        # print(f"{records=}")
-                # print(f"Found remote match for shnid {shnid}")
             if shnids_to_add:
-                print(f"Inserting {len(shnids_to_add)} new shnids")
-                self.store_artist_events(shnids_to_add)
-
-                for key, value in checksumfiles.items():
-                    checksums = sorted(checksumfilecontent[key])
-                    # below used for comparing data from files
-                    # checksums_only = [row[4] for row in md5_checksums[key]]
-                    checksumfile = (key, value[0], value[1], value[2])
-                    self.insert_checksum_file(checksumfile)
-                    self.store_signatures(checksums)
+                logging.debug(f"Inserting {len(shnids_to_add)} new shnids")
+                commit = not self.defer_remote_imports
+                if not commit:
+                    if not self.conn.in_transaction:
+                        self.conn.execute("BEGIN")
+                    self.conn.execute("SAVEPOINT remote_import")
+                try:
+                    self.store_artist_events(shnids_to_add, commit=commit)
+                    for key, value in checksumfiles.items():
+                        checksumfile = (key, value[0], value[1], value[2])
+                        self.insert_checksum_file(checksumfile, commit=commit)
+                        self.store_signatures(sorted(checksumfilecontent[key]), commit=commit)
+                except Exception:
+                    if not commit:
+                        self.conn.execute("ROLLBACK TO remote_import")
+                    raise
+                finally:
+                    if not commit:
+                        self.conn.execute("RELEASE remote_import")
+                if not commit:
+                    self.pending_remote_shnids.extend(row[5] for row in shnids_to_add)
                 return True
             else:
-                print("No new shnids to add")
+                logging.debug("No new shnids to add")
                 return False
 
-        except Exception as e:
-            logging.error(f"error in get_remote_checksum_matches: {e}")
-            raise ValueError(f"Error in file get_remote_checksum_matches: {e}")
-        # print(f"Found {len(performances_found)} remote performances")
+        except lcdb.LCDBLookupError:
+            raise
+        except Exception as exc:
+            raise ValueError(f"Could not process Etree catalog results: {exc}") from exc
 
     def vacuum_database(self):
         """

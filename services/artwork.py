@@ -37,13 +37,20 @@ def apply_artwork_to_audio(
         logger.error("Error reading artwork file %s: %s", artwork_path, exc)
         return False, str(exc)
 
+    return set_audio_artwork(audio, file_name, artwork_path, image_data, clear_existing), None
+
+
+def set_audio_artwork(
+    audio: FLAC, file_name: str, artwork_path: str, image_data: bytes,
+    clear_existing: bool,
+) -> bool:
     if clear_existing and audio.pictures:
         audio.clear_pictures()
         logger.debug("Cleared artwork from file: %s", file_name)
 
     if audio.pictures:
         logger.debug("Artwork already exists in file: %s", file_name)
-        return False, None
+        return False
 
     picture = Picture()
     picture.type = 3  # Cover (front)
@@ -51,5 +58,5 @@ def apply_artwork_to_audio(
     picture.data = image_data
     audio.add_picture(picture)
     logger.debug("Added artwork to file: %s", file_name)
-    return True, None
+    return True
 

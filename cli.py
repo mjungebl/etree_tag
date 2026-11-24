@@ -87,7 +87,8 @@ def _configure_logging(log_file: str, verbose: bool) -> None:
     root_logger.addHandler(file_handler)
 
     console_handler = logging.StreamHandler()
-    console_handler.setLevel(level)
+    console_handler.setLevel(logging.ERROR)
+    console_handler.addFilter(lambda record: record.name == logger.name)
     console_handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
     root_logger.addHandler(console_handler)
 
@@ -170,11 +171,12 @@ def main(argv: list[str] | None = None) -> int:
     logger.debug("Processing tags for %d folders.", len(concert_folders))
 
     try:
-        ConcertTagger.tag_shows(
+        completed = ConcertTagger.tag_shows(
             concert_folders,
             etree_db,
             config,
             clear_existing_tags=clear_tags,
+            manifest_path=log_file.with_name(f"{timestamp}_changes.txt"),
         )
     except FolderProcessingError as exc:
         logger.error(str(exc))
@@ -190,7 +192,7 @@ def main(argv: list[str] | None = None) -> int:
 
     elapsed = perf_counter() - start
     logger.info("Runtime: %.4f seconds", elapsed)
-    return 0
+    return 1 if completed is False else 0
 
 
 if __name__ == "__main__":
