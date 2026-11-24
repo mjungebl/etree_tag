@@ -30,6 +30,7 @@ class TrackMetadataRepository:
             list(records),
             overwrite=True,
             md5key=md5key,
+            raise_on_error=True,
         )
 
     def close(self) -> None:

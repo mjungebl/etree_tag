@@ -341,6 +341,17 @@ class RecordingFolder:
         return result
 
     def _standardize_folder_year(self, etree_rec: EtreeRecording | None):
+        new_path = self._standardized_folder_path(etree_rec)
+        if new_path is None:
+            return
+        try:
+            self.folder.rename(new_path)
+        except FileExistsError:
+            logger.error("Cannot rename %s to %s: target exists", self.folder, new_path)
+            return
+        self.__init__(str(new_path), self.etree_db, self.standardize_artist_abbrev)
+
+    def _standardized_folder_path(self, etree_rec: EtreeRecording | None) -> Path | None:
         """Validate and normalize the folder name using database info."""
         if not etree_rec or not etree_rec.artist_abbrev:
             return
@@ -489,21 +500,8 @@ class RecordingFolder:
             new_name = new_name.replace("..", ".")
 
         if new_name != folder_name:
-            new_path = self.folder.with_name(new_name)
-            try:
-                self.folder.rename(new_path)
-            except FileExistsError:
-                logger.error(
-                    f"Cannot rename {self.folder} to {new_path}: target exists"
-                )
-                return
-
-            # Reinitialize to update all path-based attributes
-            self.__init__(
-                str(new_path),
-                self.etree_db,
-                self.standardize_artist_abbrev,
-            )
+            return self.folder.with_name(new_name)
+        return None
 
     def verify_fingerprint(self):
         """Verify FLAC files using an ffp checksum file.
