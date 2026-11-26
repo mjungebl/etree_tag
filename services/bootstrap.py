@@ -266,8 +266,78 @@ def _upgrade_v1_to_v2(path: Path, data: dict) -> None:
         )
 
 
+def save_flac_path(path: Path, executable: str) -> Path | None:
+    original = path.read_bytes()
+    data = tomllib.loads(original.decode("utf-8"))
+    supportfiles = data.setdefault("supportfiles", {})
+    if supportfiles.get("flac") == executable:
+        return None
+    supportfiles["flac"] = executable
+    return _save_config(path, _settings_lines(data), (data["config_version"], original))
+
+
+def _ask_file_verification(default: bool) -> bool:
+    print("\nFILE VERIFICATION")
+    print("FLAC audio checks use the flac command. SHN checks use existing MD5 manifests.")
+    return _yes_no("Verify files before tagging?", default)
+
+
+def _upgrade_v2_to_v3(path: Path, data: dict) -> None:
+    config = build_app_config(path, data, inherit_defaults=True)
+    data.setdefault("run", {})["verify"] = _ask_file_verification(config.run.verify)
+
+
+def _ask_shn_conversion(settings) -> dict:
+    print("\nSHN CONVERSION")
+    settings.enabled = _yes_no("Convert SHN-only shows to FLAC?", settings.enabled)
+    if settings.enabled:
+        settings.compression_level = int(_choice(
+            "FLAC compression level (0–12)", str(settings.compression_level),
+            tuple(map(str, range(13))),
+        ))
+        print("Standard conversion removes source SHNs after verification and renames the original MD5 manifests.")
+        settings.paranoid = _yes_no(
+            "Enable paranoid mode to preserve the original fileset in _shn_source?",
+            settings.paranoid,
+        )
+    return asdict(settings)
+
+
+def _upgrade_v3_to_v4(path: Path, data: dict) -> None:
+    config = build_app_config(path, data, inherit_defaults=True)
+    data.setdefault("shn_conversion", {}).update(_ask_shn_conversion(config.shn_conversion))
+
+
+def _ask_reuse_verification(verify: bool, default: bool) -> bool:
+    if not verify:
+        return False
+    print(
+        "\nChoose whether to check checksums again when a show was verified on a previous run.\n"
+    )
+    print(
+        "Yes — Reuse previous checksum results for unchanged files.\n"
+        "      After the first successful check, save a dated receipt in the show folder.\n"
+        "      Check again if the receipt is missing, unreadable, or outdated.\n"
+    )
+    print("No — Run a fresh checksum check every time file verification is enabled.\n")
+    print(
+        "Only fully verified shows qualify for a receipt.\n"
+        "A failed check blocks tagging for that show. Eligible shows proceed to the tagging preview.\n"
+    )
+    return _yes_no("Reuse previous checksum verification for unchanged files?", default)
+
+
+def _upgrade_v4_to_v5(path: Path, data: dict) -> None:
+    config = build_app_config(path, data, inherit_defaults=True)
+    data.setdefault("run", {})["reuse_verification"] = _ask_reuse_verification(
+        config.run.verify, config.run.reuse_verification,
+    )
+
+
 # Register one step per starting version. Each step changes the data in memory.
-CONFIG_UPGRADES = {1: _upgrade_v1_to_v2}
+CONFIG_UPGRADES = {
+    1: _upgrade_v1_to_v2, 2: _upgrade_v2_to_v3, 3: _upgrade_v3_to_v4, 4: _upgrade_v4_to_v5,
+}
 
 
 def upgrade_user_config(path: Path) -> None:
@@ -293,7 +363,11 @@ def upgrade_user_config(path: Path) -> None:
     )
     print("Setup will back up your current config before saving the update.")
     for version in versions:
-        print(f"\nConfiguration step {version} to {version + 1}")
+        heading = (
+            "Verification receipt preference (configuration version 4 → 5)"
+            if version == 4 else f"Configuration step {version} to {version + 1}"
+        )
+        print(f"\n{heading}")
         CONFIG_UPGRADES[version](path, data)
         data["config_version"] = version + 1
 
@@ -347,6 +421,9 @@ def create_user_config(path: Path, database: str, log_file: str | None) -> None:
             for index, folder in enumerate(folders, start=1)
         ]
     _ask_tagging_preferences(defaults)
+    verify = _ask_file_verification(defaults.run.verify)
+    reuse_verification = _ask_reuse_verification(verify, defaults.run.reuse_verification)
+    shn_conversion = _ask_shn_conversion(defaults.shn_conversion)
 
     def string(value: str) -> str:
         return json.dumps(value, ensure_ascii=False).replace("\x7f", "\\u007f")
@@ -363,6 +440,11 @@ def create_user_config(path: Path, database: str, log_file: str | None) -> None:
         f"database = {string(database)}",
         f"log_file = {string(log_file)}",
         f"clear_tags = {str(clear_tags).lower()}",
+        f"verify = {str(verify).lower()}",
+        f"reuse_verification = {str(reuse_verification).lower()}",
+        "",
+        "[shn_conversion]",
+        *(f"{key} = {_toml_value(value)}" for key, value in shn_conversion.items()),
         "",
         "[preferences]",
         *(

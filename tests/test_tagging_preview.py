@@ -1,3 +1,4 @@
+import hashlib
 import struct
 from pathlib import Path
 from types import SimpleNamespace
@@ -9,7 +10,9 @@ from mutagen.flac import FLAC
 import cli
 import lcdb_graphql
 from recordingfiles import RecordingFolder
+from services import shn_conversion
 from services.config import SHIPPED_CONFIG
+from services.verification import VerificationFailed
 
 
 @pytest.fixture
@@ -186,3 +189,172 @@ def test_mixed_preview_summarizes_outcomes_and_keeps_traceback_in_log(
     assert "Traceback" not in manifest
     assert "Traceback" in next(folder.parent.glob("*_mixed.log")).read_text()
     assert (changing / "track.flac").read_bytes() == original
+
+
+def test_verification_failure_blocks_show_before_catalog_lookup(recording, monkeypatch, capsys):
+    folder, flac, args = recording
+    original = flac.read_bytes()
+    monkeypatch.setattr(cli, "choose_flac", lambda *args, **kwargs: "flac")
+
+    def bad_audio(folder, executable, *, progress):
+        assert executable == "flac"
+        raise VerificationFailed("track.flac: FLAC audio test failed")
+
+    def unexpected_match(*args, **kwargs):
+        pytest.fail("A show that failed verification should not reach catalog lookup")
+
+    monkeypatch.setattr(cli, "verify_show", bad_audio)
+    monkeypatch.setattr(RecordingFolder, "_find_matching_recording", unexpected_match)
+    monkeypatch.setattr("builtins.input", unexpected_match)
+    assert cli.main([*args, "--verify", str(folder)]) == 1
+    assert "  Failed: 1" in capsys.readouterr().out
+    assert flac.read_bytes() == original
+    assert not list(folder.glob("tagger_logs/*_changes.txt"))
+
+
+@pytest.mark.parametrize(("verify", "reuse"), [(False, False), (True, False), (True, True)])
+def test_shn_only_set_is_reported_separately(recording, monkeypatch, capsys, verify, reuse):
+    folder, flac, args = recording
+    flac.unlink()
+    shn = folder / "track.shn"
+    shn.write_bytes(b"recording")
+    digest = hashlib.md5(shn.read_bytes(), usedforsecurity=False).hexdigest()
+    (folder / "show.md5").write_text(f"{digest} *track.shn\n", encoding="utf-8")
+
+    def unexpected(*args, **kwargs):
+        pytest.fail("SHN-only sets do not need FLAC or a catalog match")
+
+    monkeypatch.setattr(cli, "choose_flac", unexpected)
+    monkeypatch.setattr(RecordingFolder, "_find_matching_recording", unexpected)
+    monkeypatch.setattr("builtins.input", unexpected)
+    if reuse:
+        with Path(args[1]).open("a", encoding="utf-8") as config:
+            config.write("\n[run]\nverify = true\nreuse_verification = true\n")
+    elif verify:
+        args.append("--verify")
+    assert cli.main([*args, str(folder)]) == 0
+    output = capsys.readouterr().out
+    assert "  Failed: 0" in output
+    assert "  SHN-only sets skipped for tagging: 1\n  Failed: 0" in output
+    assert ("Verifying file integrity..." in output) == verify
+    if verify:
+        assert output.index("Verifying file integrity...") < output.index("Checking available SHN MD5s")
+    assert "SHN-only sets (verification only)" in output
+    assert f"[{'OK' if verify else 'Not checked'}] {folder.name}" in output
+    assert ("Verified whole-file MD5" if verify else "Verification is off") in output
+    if reuse:
+        assert cli.main([*args, str(folder)]) == 0
+        assert "Reused verification from " in capsys.readouterr().out
+        assert cli.main([*args, "--no-reuse-verification", str(folder)]) == 0
+        assert "Checking available SHN MD5s" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("mode", ["normal", "paranoid", "mismatch", "declined"])
+def test_shn_conversion_precedes_verification_and_tagging(recording, monkeypatch, capsys, mode):
+    folder, flac, args = recording
+    folder_with_id = folder.with_name(f"{folder.name}.01234.shnf")
+    folder.rename(folder_with_id)
+    folder = folder_with_id
+    flac = folder / flac.name
+    audio = flac.read_bytes()
+    flac.unlink()
+    shn = folder / "track.shn"
+    shn.write_bytes(b"original SHN")
+    digest = hashlib.md5(shn.read_bytes(), usedforsecurity=False).hexdigest()
+    checksum = f"{digest} *{shn.name}\n".encode()
+    manifest = folder / "original.md5"
+    manifest.write_bytes(checksum)
+    marker = folder / "SHN-to-FLAC-1234.txt"
+    archive = folder / "_shn_source"
+    extras = folder / "extras"
+    extras.mkdir()
+    (extras / "notes.txt").write_bytes(b"original notes")
+    info = folder / "info.txt"
+    info.write_bytes(b"original show info")
+    (folder / "old.log").write_bytes(b"old log")
+    config = Path(args[1])
+    if mode in {"paranoid", "mismatch"}:
+        config.write_text(
+            config.read_text(encoding="utf-8").replace(
+                "enabled = false\ncompression_level = 8\nparanoid = false",
+                "enabled = true\ncompression_level = 5\nparanoid = true",
+            ),
+            encoding="utf-8",
+        )
+
+    def encode(command, **kwargs):
+        assert mode != "declined", "Conversion started without approval"
+        if "-hash" in command:
+            is_shn = command[command.index("-f") + 1] == "shn"
+            if is_shn:
+                assert Path(command[command.index("-i") + 1]).read_bytes() == b"original SHN"
+            digest = b"other" if mode == "mismatch" and not is_shn else b"same"
+            return SimpleNamespace(returncode=0, stdout=b"SHA256=" + digest)
+        source = Path(command[command.index("-i") + 1])
+        assert source.name == shn.name
+        assert source.parent == folder if mode == "normal" else source.parent.name == archive.name
+        assert command[command.index("-compression_level") + 1] == ("8" if mode == "normal" else "5")
+        Path(command[-1]).write_bytes(audio)
+        return SimpleNamespace(returncode=0)
+
+    def verify_published(path, executable, *, progress):
+        assert path == folder
+        assert flac.read_bytes() == audio
+        assert "track.shn -> track.flac" in marker.read_text(encoding="utf-8")
+        return []
+
+    monkeypatch.setattr(cli, "choose_flac", lambda *args, **kwargs: "flac")
+    monkeypatch.setattr(cli.shutil, "which", lambda command: "ffmpeg")
+    monkeypatch.setattr(shn_conversion.subprocess, "run", encode)
+    monkeypatch.setattr(shn_conversion, "verify_show", lambda path, executable, **kwargs: [])
+    monkeypatch.setattr(cli, "verify_show", verify_published)
+    def approve(prompt):
+        if "apply SHN conversions" not in prompt:
+            return ""
+        change_manifest, = folder.rglob("*.shn-conversion.txt")
+        text = change_manifest.read_text(encoding="utf-8")
+        assert "track.shn -> track.flac" in text
+        if mode in {"normal", "declined"}:
+            assert "Rename original.md5 to original.md5.shn-source" in text
+        assert shn.exists() and not flac.exists() and not marker.exists()
+        return "" if mode == "declined" else "yes"
+
+    monkeypatch.setattr("builtins.input", approve)
+    override = ["--convert-shn"] if mode in {"normal", "declined"} else []
+    result = cli.main([*args, *override, "--verify", str(folder)])
+    if mode == "declined":
+        assert result == 0
+        assert "No SHN conversions or tagging changes were applied" in capsys.readouterr().out
+        assert shn.exists() and manifest.read_bytes() == checksum
+        assert not any(path.exists() for path in (archive, flac, marker))
+        return
+    if mode == "mismatch":
+        assert result == 1
+        assert "decoded SHN and FLAC audio differ" in capsys.readouterr().out
+        assert not any(path.exists() for path in (archive, flac, marker))
+        assert manifest.read_bytes() == checksum
+        return
+    assert result == 0
+    output = capsys.readouterr().out
+    assert "Will change: 1" in output
+    assert "Converting SHN 1/1" in output
+    assert flac.read_bytes() == audio
+    assert RecordingFolder(str(folder)).info_file == info
+    if mode == "paranoid":
+        assert manifest.read_bytes() == checksum
+        assert shn.read_bytes() == b"original SHN"
+        assert (archive / shn.name).read_bytes() == shn.read_bytes()
+        assert (archive / manifest.name).read_bytes() == checksum
+        assert (archive / info.name).read_bytes() == info.read_bytes()
+        assert (archive / "extras" / "notes.txt").read_bytes() == b"original notes"
+        assert list(archive.rglob("*.log")) == [archive / "old.log"]
+        assert (archive / "old.log").read_bytes() == b"old log"
+        assert not list(archive.rglob("*.shn-conversion.txt"))
+        assert "Saving the verified original fileset in _shn_source" in output
+    else:
+        assert not manifest.exists()
+        assert manifest.with_suffix(".md5.shn-source").read_bytes() == checksum
+        assert not archive.exists()
+        assert not shn.exists()
+        assert (extras / "notes.txt").read_bytes() == b"original notes"
+        assert "Removing 1 source SHN file(s) after FLAC verification" in output

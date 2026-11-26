@@ -537,6 +537,9 @@ class ConcertTagger:
         clear_existing_tags: bool = False,
         *,
         manifest_path: Path | None = None,
+        verify_folder=None,
+        convert_folder=None,
+        describe_conversion=None,
     ):
         """
         Tags concert folders with metadata from the etree database.
@@ -557,6 +560,9 @@ class ConcertTagger:
                     clear_existing_tags,
                     manifest_path,
                     etree_db,
+                    verify_folder=verify_folder,
+                    convert_folder=convert_folder,
+                    describe_conversion=describe_conversion,
                 )
             finally:
                 etree_db.conn.rollback()

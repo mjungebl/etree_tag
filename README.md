@@ -74,6 +74,72 @@ Type exactly `yes` to apply the plan. Enter, any other answer, or end of input
 cancels the plan. The CLI skips unchanged FLACs and shows whose files change
 after the preview.
 
+### File verification
+
+Run `python cli.py --verify` or set `verify = true` under `[run]` in
+your TOML to verify shows before tagging. Use `--no-verify` to override
+that setting for one run.
+
+FLAC audio tests require the [Xiph FLAC command-line tool](https://xiph.org/flac/download.html).
+Etree Tag tests `supportfiles.flac` (or the `--flac` override), then checks
+`PATH` for `flac` on macOS and Linux or `flac.exe` on Windows. If the
+tool is missing, the interactive menu can open Xiph's download page, test
+an executable path or folder, or exit so you can install the tool and try
+again. A working path entered in the menu is saved in managed settings
+for future runs. With `--config`, set `supportfiles.flac` in that TOML or
+add the executable's folder to `PATH` to reuse it.
+
+SHN files are checked against available `.md5` manifests using Python.
+Verification failures block changes to the affected show. Files without a
+reference checksum are reported as unverified.
+
+Setup and the version 5 upgrade ask whether to reuse verification receipts
+when file verification is enabled. To enable it manually, set
+`reuse_verification = true` alongside `verify = true` under `[run]`.
+The CLI saves a dated `.etree-verified.json` receipt in each fully verified
+show folder. On later runs, it reports the previous verification time and
+skips the checksum pass if the tracked audio and applicable MD5 manifests
+still match the receipt's file metadata. Changes, including FLAC tag edits,
+trigger a fresh check. Use `--reuse-verification` for a one-run opt-in, or
+`--verify --no-reuse-verification` to force fresh checks.
+New SHN conversions always verify their inputs and outputs.
+
+### Convert SHN-only sets
+
+Version 4 of the user configuration adds these settings during setup or
+upgrade.
+
+```toml
+[shn_conversion]
+enabled = false
+compression_level = 8
+paranoid = false
+```
+
+Enable conversion to losslessly re-encode SHN-only shows before the tagging
+preview. Use `--convert-shn` or `--no-convert-shn` to override the saved
+choice for one run. Compression accepts FFmpeg levels 0 through 12 and
+defaults to 8. Conversion uses FFmpeg from `PATH`, `supportfiles.ffmpeg`,
+or `--ffmpeg PATH`, and requires the FLAC command-line tool. It checks available
+SHN checksums and tests the new FLACs before publishing them, even when
+routine verification is disabled. Standard conversion removes the source SHNs
+after successful verification, renames original `.md5` manifests to
+`.md5.shn-source` without changing their contents, and keeps companion files.
+Conversion writes `SHN-to-FLAC-<shnid>.txt` alongside the tracks
+(`SHN-to-FLAC-unknown-SHNID.txt` when the folder name has no SHNID).
+Review the SHN conversion manifest and type `yes` before conversion starts.
+After conversion, review the separate tagging manifest to approve any tagging
+changes.
+
+Enable paranoid mode to preserve the complete original fileset in
+`_shn_source`, including SHNs, MD5 manifests, and companion files such as
+the info TXT. Paranoid mode also keeps the source SHNs in the show folder.
+It checks each copy
+byte for byte using SHA-256 and compares the decoded SHN and FLAC audio
+before publishing the archive and converted tracks. The current run's log
+and conversion manifest are excluded. An existing `_shn_source` directory blocks paranoid conversion
+for that show.
+
 ### Logging
 Setup defaults the base log path to `tagger_logs/tag_log.log` under your saved
 library or show folder. Each run prefixes the filename with a timestamp, for
@@ -112,13 +178,12 @@ directly, pass `--config PATH`. To adopt existing choices into the managed
 configuration, transfer them to the file created by setup, keeping its
 `config_version` and making any paths relative to that file or absolute.
 
-If your saved TOML has `config_version = 1`, run `python cli.py` in an
-interactive terminal. Setup keeps your existing library and artwork preferences
-and asks the Album tag, Track titles, and Performance date questions. Press
-Enter to keep the displayed values. After saving version 2, the CLI prints
-the backup path and exits before tagging. The backup retains the original
-formatting and comments. If you skip a release, setup applies each available
-config upgrade in order and saves only after all steps succeed.
+If your saved TOML uses an older schema, run `python cli.py` in an interactive
+terminal. Upgrading from version 2 to 3 asks whether to verify files before
+tagging. Upgrading from version 1 also asks the Album tag, Track titles, and
+Performance date questions. Setup keeps your other preferences, prints the
+backup path, and exits before tagging. The backup retains the original
+formatting and comments.
 
 ## Configuration
 `config.toml` drives behaviour. Key settings:

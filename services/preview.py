@@ -11,6 +11,7 @@ from mutagen.flac import FLAC
 
 from services.exceptions import MetadataImportError
 from services.tagging import prepare_file_tags
+from services.verification import VerificationFailed
 
 logger = logging.getLogger(__name__)
 COVER_EXTENSIONS = ("jpg", "jpeg", "png", "gif", "bmp", "webp")
@@ -269,23 +270,89 @@ class ShowPlan:
         return True
 
 
-def _print_tagging_results(updated, current, failed):
+def _print_tagging_results(updated, current, shn_skipped, failed):
     print("\nTagging results")
     print(f"  Updated: {updated}")
     print(f"  Already tagged per preferences: {current}")
+    if shn_skipped:
+        print(f"  SHN-only sets skipped for tagging: {shn_skipped}")
     print(f"  Failed: {failed}")
 
 
-def preview_and_apply(folders, make_tagger, clear_tags, manifest_path, database):
+def _approve_manifest(manifest_path, action):
+    print(f"Change manifest: {manifest_path.resolve()}", flush=True)
+    try:
+        print()
+        return input(f'Review the manifest. Type "yes" to {action} or anything else to cancel: ') == "yes"
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return False
+
+
+def _shn_inputs(folder):
+    return {path: file_state(path) for pattern in ("*.shn", "*.md5", "*.flac")
+            for path in folder.glob(pattern)}
+
+
+def preview_and_apply(
+    folders, make_tagger, clear_tags, manifest_path, database, *,
+    verify_folder=None, convert_folder=None, describe_conversion=None,
+):
     plans = []
     details = []
     issues = []
     failed = 0
     skipped = 0
+    shn_only = []
+    shn_skipped = 0
     reserved = set(folders)
     folders = list(dict.fromkeys(folders))
+    approved_conversions = {}
+    conversion_manifest = manifest_path.with_suffix(".shn-conversion.txt")
+    if convert_folder:
+        approved_conversions = {
+            folder: _shn_inputs(folder) for folder in folders
+            if not any(folder.glob("*.flac")) and any(folder.glob("*.shn"))
+        }
+        if approved_conversions:
+            summary_line = f"SHN conversion preview for {len(approved_conversions)} show(s)"
+            with conversion_manifest.open("x", encoding="utf-8") as manifest:
+                manifest.write(f"{summary_line}\n")
+                for folder in approved_conversions:
+                    manifest.write("\n" + "\n".join([str(folder), *describe_conversion(folder)]) + "\n")
+            print(f"\n{summary_line}")
+            if not _approve_manifest(conversion_manifest, "apply SHN conversions"):
+                print("\nCancelled. No SHN conversions or tagging changes were applied.")
+                return True
+    if verify_folder:
+        print("\nVerifying file integrity...", flush=True)
     for folder in folders:
+        is_shn_only = not any(folder.glob("*.flac")) and any(folder.glob("*.shn"))
+        if is_shn_only and folder not in approved_conversions:
+            status = "Not checked"
+            notes = ["Verification is off. Use --verify to check the MD5 manifests."]
+            if verify_folder:
+                try:
+                    notes = verify_folder(folder)
+                    status = "Unverified" if any(note.startswith("Unverified:") for note in notes) else "OK"
+                except (VerificationFailed, OSError) as exc:
+                    failed += 1
+                    status = "Failed"
+                    notes = [str(exc)]
+            if status != "Failed":
+                shn_skipped += 1
+            shn_only.extend([f"  - [{status}] {folder.name}", *(f"    {note}" for note in notes)])
+            continue
         try:
+            if folder in approved_conversions:
+                if _shn_inputs(folder) != approved_conversions[folder]:
+                    raise VerificationFailed("SHN conversion inputs changed after the preview")
+                conversion = convert_folder(folder, conversion_manifest)
+                print(f"{folder.name}: {conversion}")
+                logger.info("%s: %s", folder, conversion)
+            verification = verify_folder(folder) if verify_folder else []
+            for note in verification:
+                logger.info("%s: %s", folder, note)
             tagger = make_tagger(folder)
             if tagger.errormsg:
                 skipped += 1
@@ -296,7 +363,11 @@ def preview_and_apply(folders, make_tagger, clear_tags, manifest_path, database)
             if plan.rename_to:
                 reserved.add(plan.rename_to)
             plans.append(plan)
-            details.extend([str(folder), *(plan.lines or ["  No changes"]), ""])
+            details.extend([str(folder), *(f"  {note}" for note in verification), *(plan.lines or ["  No changes"]), ""])
+        except VerificationFailed as exc:
+            failed += 1
+            logger.warning("Verification failed for %s: %s", folder, exc)
+            issues.append((folder.name, str(exc)))
         except Exception as exc:
             failed += 1
             logger.exception("Could not plan changes for %s", folder)
@@ -305,16 +376,23 @@ def preview_and_apply(folders, make_tagger, clear_tags, manifest_path, database)
     pending = [plan for plan in plans if plan.has_changes]
     current = len(plans) - len(pending)
     remote_shnids = database.pending_remote_shnids
+    shn_summary = ["", "SHN-only sets (verification only)", *shn_only] if shn_only else []
     if not pending and not remote_shnids:
-        _print_tagging_results(0, current, skipped + failed)
-        print("\nNo changes detected.")
+        _print_tagging_results(0, current, shn_skipped, skipped + failed)
+        if verify_folder or convert_folder:
+            for name, reason in issues:
+                print(f"\n    - {name}\n      {reason}")
+        if shn_summary:
+            print("\n".join(shn_summary))
+        print("\nNo tagging changes detected." if convert_folder else "\nNo changes detected.")
         return not failed
 
     summary = [
         f"Tagging preview for {len(folders)} show(s)",
-        f"",
+        "",
         f"  Will change: {len(pending)}",
         f"  Already tagged per preferences: {current}",
+        *([f"  SHN-only sets skipped for tagging: {shn_skipped}"] if shn_skipped else []),
         f"  Expected to fail: {skipped + failed}",
     ]
     for name, reason in issues:
@@ -325,22 +403,16 @@ def preview_and_apply(folders, make_tagger, clear_tags, manifest_path, database)
         tag_example = next((plan.tag_example for plan in plans if plan.tag_example), [])
     if tag_example:
         summary.extend(["", *tag_example])
+    summary.extend(shn_summary)
     catalog_lines = []
     if remote_shnids:
         ids = ", ".join(map(str, remote_shnids))
         catalog_lines = [f"Import Etree catalog matches and fingerprints for SHNIDs {ids}", ""]
     with manifest_path.open("x", encoding="utf-8") as manifest:
         manifest.write("\n".join([*summary, "", *catalog_lines, *details, ""]))
-    print("\n".join(summary))
+    print("\n" + "\n".join(summary))
     print()
-    print(f"Change manifest: {manifest_path.resolve()}", flush=True)
-    try:
-        print()
-        approved = input('Review the manifest. Type "yes" to apply or anything else to cancel: ') == "yes"
-    except (EOFError, KeyboardInterrupt):
-        approved = False
-        print()
-    if not approved:
+    if not _approve_manifest(manifest_path, "apply"):
         print()
         print("Cancelled. No planned changes were applied.")
         return not failed
@@ -361,5 +433,5 @@ def preview_and_apply(folders, make_tagger, clear_tags, manifest_path, database)
         except Exception:
             failed += 1
             logger.exception("Could not finish applying %s. Some changes may have been saved.", plan.folder)
-    _print_tagging_results(applied, current, skipped + failed)
+    _print_tagging_results(applied, current, shn_skipped, skipped + failed)
     return not failed

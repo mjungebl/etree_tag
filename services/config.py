@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 import tomllib
 
-CONFIG_VERSION = 2
+CONFIG_VERSION = 5
 SHIPPED_CONFIG = Path(__file__).resolve().parents[1] / "config.toml"
 LIBRARY_LOG_PATH = Path("tagger_logs") / "tag_log.log"
 
@@ -29,6 +29,8 @@ class RunConfig:
     database: str = ""
     log_file: str = ""
     clear_tags: bool = False
+    verify: bool = False
+    reuse_verification: bool = False
 
 
 @dataclass
@@ -51,6 +53,13 @@ class PreferencesConfig:
     enable_filename_fallback: bool = False
     write_date: bool = False
     write_date_parts: bool = False
+
+
+@dataclass
+class ShnConversionConfig:
+    enabled: bool = False
+    compression_level: int = 8
+    paranoid: bool = False
 
 
 @dataclass
@@ -97,6 +106,7 @@ class AppConfig:
     supportfiles: SupportFilesConfig
     raw: Dict[str, object] = field(default_factory=dict)
     run: RunConfig = field(default_factory=RunConfig)
+    shn_conversion: ShnConversionConfig = field(default_factory=ShnConversionConfig)
 
     def to_mapping(self) -> Dict[str, object]:
         """Return a dict compatible with legacy code expecting nested mappings."""
@@ -178,6 +188,7 @@ def _resolve_paths(data: dict, directory: Path) -> None:
 def _validate_config(data: dict) -> None:
     for section, model in (
         ("run", RunConfig()),
+        ("shn_conversion", ShnConversionConfig()),
         ("preferences", PreferencesConfig()),
         ("album_tag", AlbumTagConfig()),
         ("cover", CoverConfig()),
@@ -198,6 +209,8 @@ def _validate_config(data: dict) -> None:
             ):
                 label = "list of strings" if kind is list else kind.__name__
                 raise ValueError(f"{section}.{key} must be a {label}.")
+    if not 0 <= data.get("shn_conversion", {}).get("compression_level", 8) <= 12:
+        raise ValueError("shn_conversion.compression_level must be between 0 and 12.")
     if data.get("preferences", {}).get("year_format", "YYYY").upper() not in {"YY", "YYYY"}:
         raise ValueError("preferences.year_format must be YY or YYYY.")
     album = data.get("album_tag", {})
@@ -294,6 +307,10 @@ def build_app_config(path: Path, data: dict, *, inherit_defaults: bool) -> AppCo
         recording_folder=recording_folder,
         supportfiles=supportfiles,
         raw=data,
+        shn_conversion=ShnConversionConfig(**{
+            key: value for key, value in data.get("shn_conversion", {}).items()
+            if key in vars(ShnConversionConfig())
+        }),
         run=RunConfig(**{
             key: value for key, value in data.get("run", {}).items()
             if key in vars(RunConfig())

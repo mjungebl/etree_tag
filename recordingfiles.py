@@ -5,6 +5,7 @@ from collections.abc import Mapping, Sequence
 
 from sqliteetreedb import SQLiteEtreeDB, EtreeRecording
 from losslessfiles import ffp
+from services.shn_conversion import CONVERSION_NOTE_PREFIX
 import re
 from datetime import datetime
 logger = logging.getLogger(__name__)
@@ -196,7 +197,8 @@ class RecordingFolder:
             self.checksums.append(file.checksum)
         return self.checksums
 
-    def _parse_shnid(self, input_str):
+    @staticmethod
+    def _parse_shnid(input_str):
         """
         Parses the input string to find the first sequence of characters between periods
         that is entirely numeric. Leading zeros are removed by converting the value to an integer.
@@ -228,6 +230,8 @@ class RecordingFolder:
     def _find_file_by_extension(self, ext: str):
         """Return the first file found with the given extension."""
         for file in self.folder.glob(f"*.{ext}"):
+            if ext == "txt" and file.name.startswith(CONVERSION_NOTE_PREFIX):
+                continue
             return file
         return None
 
