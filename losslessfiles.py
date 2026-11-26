@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 config_file = os.path.join(os.path.dirname(__file__), "config.toml")
 config = load_config(config_file)
-PathToFlac = config.supportfiles.get("flac")
+PathToFlac = config.supportfiles.get("flac", "flac")
 PathToMetaflac = config.supportfiles.get("metaflac")
 
 # print(f'{PathToFlac=} {PathToMetaflac=}')

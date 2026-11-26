@@ -1,18 +1,30 @@
 import argparse
 import logging
 import os
+import shutil
 import sys
 from datetime import datetime
+from functools import cache
 from pathlib import Path
 from time import perf_counter
 
-from services.bootstrap import create_user_config, upgrade_user_config, user_config_path
+from recordingfiles import RecordingFolder
+from services.bootstrap import create_user_config, save_flac_path, upgrade_user_config, user_config_path
 from services.config import ConfigUpgradeRequired, LIBRARY_LOG_PATH, SHIPPED_CONFIG, load_app_config
 
 from services.exceptions import FolderProcessingError, TaggerError
+from services.shn_conversion import SOURCE_ARCHIVE, convert_shn, describe_conversion
+from services.verification import choose_flac, verify_show, verify_show_with_receipt
 from tagger import ConcertTagger, SQLiteEtreeDB
 
 logger = logging.getLogger(__name__)
+
+
+def _show_progress(folder):
+    def report(message):
+        print(f"{folder.name}: {message}", flush=True)
+
+    return report
 
 
 def _discover_folders(parent: str, log_directory: Path | None = None) -> list[str]:
@@ -23,7 +35,7 @@ def _discover_folders(parent: str, log_directory: Path | None = None) -> list[st
         child.path.replace('\\', '/')
         for child in os.scandir(parent_path)
         if child.is_dir()
-        and Path(child.path).name.lower() != LIBRARY_LOG_PATH.parent.name
+        and Path(child.path).name.lower() not in {LIBRARY_LOG_PATH.parent.name, SOURCE_ARCHIVE}
         and Path(child.path).resolve() != log_directory
     ]
 
@@ -58,6 +70,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--log-file",
         help="Override the base log file path. Each run prefixes the filename with a timestamp.",
     )
+    parser.add_argument(
+        "--verify", action=argparse.BooleanOptionalAction,
+        help="Check FLAC audio and available SHN MD5 manifests before tagging.",
+    )
+    parser.add_argument("--flac", help="Path to the FLAC executable for this run.")
+    parser.add_argument(
+        "--reuse-verification", action=argparse.BooleanOptionalAction,
+        help="Verify shows using saved receipts when their audio and checksums are unchanged.",
+    )
+    parser.add_argument(
+        "--convert-shn", action=argparse.BooleanOptionalAction,
+        help="Convert SHN-only sets before the tagging preview using the saved conversion options.",
+    )
+    parser.add_argument("--ffmpeg", help="Path to FFmpeg for --convert-shn (defaults to PATH).")
     return parser.parse_args(argv)
 
 
@@ -149,11 +175,66 @@ def main(argv: list[str] | None = None) -> int:
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S_%f")
     log_file = log_base.with_name(f"{timestamp}_{log_base.name}")
     clear_tags = config.run.clear_tags if args.clear_tags is None else args.clear_tags
+    verify = (config.run.verify or args.reuse_verification is True) if args.verify is None else args.verify
+    reuse_verification = (
+        config.run.reuse_verification if args.reuse_verification is None else args.reuse_verification
+    )
+    verification_options = {}
     try:
         concert_folders = gather_folders(args, Path(log_file).parent.resolve())
         for folder in concert_folders:
             if not Path(folder).is_dir():
                 raise ValueError(f"Concert folder '{folder}' does not exist.")
+        has_shn_only = any(
+            not any(Path(folder).glob("*.flac")) and any(Path(folder).glob("*.shn"))
+            for folder in concert_folders
+        )
+        shn_settings = config.shn_conversion
+        convert = has_shn_only and (shn_settings.enabled if args.convert_shn is None else args.convert_shn)
+        if convert:
+            ffmpeg_path = args.ffmpeg or config.supportfiles.get("ffmpeg") or "ffmpeg"
+            ffmpeg = shutil.which(str(Path(ffmpeg_path).expanduser()))
+            if not ffmpeg:
+                raise ValueError("SHN conversion needs FFmpeg. Add it to PATH or pass --ffmpeg PATH.")
+        if verify or convert:
+            @cache
+            def get_flac():
+                configured_flac = args.flac or config.supportfiles.files.get("flac")
+                if configured_flac and not args.flac:
+                    configured_flac = str(path.parent / Path(configured_flac).expanduser())
+                return choose_flac(
+                    configured_flac,
+                    interactive=sys.stdin.isatty(),
+                    remember=(lambda executable: save_flac_path(path, executable)) if managed_config else None,
+                )
+
+            flac = None
+            if convert or (not reuse_verification and any(
+                any(Path(folder).glob("*.flac")) for folder in concert_folders
+            )):
+                flac = get_flac()
+                if flac is None:
+                    return 1
+            if verify and reuse_verification:
+                verification_options["verify_folder"] = lambda folder: verify_show_with_receipt(
+                    folder, get_flac, progress=_show_progress(folder),
+                )
+            elif verify:
+                verification_options["verify_folder"] = lambda folder: verify_show(
+                    folder, flac, progress=_show_progress(folder),
+                )
+            if convert:
+                verification_options["describe_conversion"] = lambda folder: describe_conversion(
+                    folder, RecordingFolder._parse_shnid(folder.name),
+                    shn_settings.compression_level, shn_settings.paranoid,
+                )
+                verification_options["convert_folder"] = lambda folder, conversion_manifest: convert_shn(
+                    folder, ffmpeg, flac, RecordingFolder._parse_shnid(folder.name),
+                    compression_level=shn_settings.compression_level,
+                    paranoid=shn_settings.paranoid,
+                    generated_files=(log_file.resolve(), conversion_manifest.resolve()),
+                    progress=_show_progress(folder),
+                )
         if not Path(database).parent.is_dir() or Path(database).is_dir():
             raise ValueError(f"Invalid SQLite database path '{database}'.")
         Path(log_file).parent.mkdir(parents=True, exist_ok=True)
@@ -177,6 +258,7 @@ def main(argv: list[str] | None = None) -> int:
             config,
             clear_existing_tags=clear_tags,
             manifest_path=log_file.with_name(f"{timestamp}_changes.txt"),
+            **verification_options,
         )
     except FolderProcessingError as exc:
         logger.error(str(exc))

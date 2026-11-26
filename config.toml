@@ -1,6 +1,11 @@
 # flac_config.toml
 # Configuration for FLAC Tagging Application
 
+[shn_conversion]
+enabled = false
+compression_level = 8
+paranoid = false
+
 [preferences]
 # Set the year format for tags.
 # Valid options: "YYYY" or "YY"
@@ -58,9 +63,9 @@ gd = ['GD_Art/EE_Artwork/', 'GD_Art/TV_Artwork/']
 
 # Additional configuration settings can be added below.
 [supportfiles]
-#flac = "K:/Flac/flac.exe"
+# Optional override. The verification CLI looks on PATH by default.
+# flac = "C:/path/to/flac.exe"
 #metaflac = "K:/Flac/metaflac.exe"
-flac = "K:/Flac/flac-1.5.0-win/Win64/flac.exe"
 metaflac = "K:/Flac/flac-1.5.0-win/Win64/metaflac.exe"
 oldflac = "K:/Flac/flac-1.3.2-win/win64/flac.exe"
 #metaflac = "K:/Flac/flac-1.3.2-win/win64/metaflac.exe"

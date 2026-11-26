@@ -20,7 +20,7 @@ def test_first_run_only_saves_config_and_next_run_uses_preferences(
     database = tmp_path / "catalog.db"
     log = show / "tagger_logs" / "tag_log.log"
     answers = iter(
-        [str(show), "no", str(database), "", "yes", "yes", "", "", "", ""] + [""] * 10
+        [str(show), "no", str(database), "", "yes", "yes", "", "", "", ""] + [""] * 12
     )
     monkeypatch.setattr(cli, "user_config_path", lambda: config_path)
     monkeypatch.setattr(cli.sys, "stdin", SimpleNamespace(isatty=lambda: True))
@@ -63,7 +63,7 @@ def test_first_run_only_saves_config_and_next_run_uses_preferences(
     assert calls == []
     assert list(show.iterdir()) == []
     config = load_app_config(config_path, user_config=True)
-    assert config.raw["config_version"] == 2
+    assert config.raw["config_version"] == 5
     assert config.run.scan_subfolders is False
     assert config.preferences.verbose_logging is True
     assert config.preferences.segue_string == ">"
@@ -93,7 +93,7 @@ def test_first_run_only_saves_config_and_next_run_uses_preferences(
 
 
 def test_discovery_skips_log_directories(tmp_path):
-    for name in ("tagger_logs", "custom_logs", "show"):
+    for name in ("tagger_logs", "custom_logs", "_shn_source", "show"):
         (tmp_path / name).mkdir()
     args = cli.parse_args(["--parent-folder", str(tmp_path)])
     assert cli.gather_folders(args, tmp_path / "custom_logs") == [
@@ -104,21 +104,22 @@ def test_discovery_skips_log_directories(tmp_path):
 def test_versioned_config_resolves_path_origins_and_rejects_invalid_values(tmp_path):
     config_path = tmp_path / "config.toml"
     config_path.write_text(
-        'config_version = 2\n[run]\nlibrary_folder = "shows"\n', encoding="utf-8"
+        'config_version = 5\n[run]\nlibrary_folder = "shows"\n', encoding="utf-8"
     )
     config = load_app_config(config_path, user_config=True)
     assert Path(config.run.library_folder) == tmp_path / "shows"
+    assert "flac" not in config.supportfiles.files
     assert (
         Path(config.cover.default_images["gd"])
         == SHIPPED_CONFIG.parent / "GD_Art/default.jpg"
     )
 
-    config_path.write_text("config_version = 3\n", encoding="utf-8")
+    config_path.write_text("config_version = 6\n", encoding="utf-8")
     with pytest.raises(ValueError, match="Unsupported config_version"):
         load_app_config(config_path, user_config=True)
 
     config_path.write_text(
-        'config_version = 2\n[run]\nclear_tags = "yes"\n', encoding="utf-8"
+        'config_version = 5\n[run]\nclear_tags = "yes"\n', encoding="utf-8"
     )
     with pytest.raises(ValueError, match="run.clear_tags"):
         load_app_config(config_path, user_config=True)
@@ -145,16 +146,16 @@ def test_version_one_upgrade_keeps_saved_values_and_backs_up_original(
         cli, "SQLiteEtreeDB", lambda path: pytest.fail("Setup opened SQLite")
     )
     prompts = []
-    answers = iter([""] * 9 + ["yes", "yes"])
+    answers = iter([""] * 9 + ["yes", "yes", "yes", "", "yes"])
     monkeypatch.setattr(
         "builtins.input", lambda prompt: prompts.append(prompt) or next(answers)
     )
 
     assert cli.main([]) == 0
     output = capsys.readouterr().out
-    assert "version 1 to 2" in output
+    assert "version 1 to 5" in output
     assert f"Current config (version 1): {config_path}" in output
-    assert "Updated config (version 2): same path" in output
+    assert "Updated config (version 5): same path" in output
     assert "adds choices for album tags, track titles, and performance dates" in output
     assert all(
         "catalog" not in prompt and "library folder" not in prompt for prompt in prompts
@@ -162,7 +163,7 @@ def test_version_one_upgrade_keeps_saved_values_and_backs_up_original(
     assert existing_backup.read_bytes() == b"earlier backup"
     assert config_path.with_name("config.toml.v1.bak.2").read_bytes() == original
     config = load_app_config(config_path, user_config=True)
-    assert config.raw["config_version"] == 2
+    assert config.raw["config_version"] == 5
     assert config.raw["work_notes"]["files"] == [{"name": "a"}]
     assert Path(config.run.library_folder) == tmp_path / "shows"
     assert Path(config.cover.default_images["gd"]) == tmp_path / "my-cover.png"
@@ -170,6 +171,22 @@ def test_version_one_upgrade_keeps_saved_values_and_backs_up_original(
     assert config.preferences.verbose_logging
     assert not config.album_tag.include_city
     assert config.preferences.write_date and config.preferences.write_date_parts
+    assert config.run.verify
+    assert config.run.reuse_verification
+    assert config.shn_conversion == config_service.ShnConversionConfig()
+
+
+def test_v3_upgrade_saves_shn_choices(tmp_path, monkeypatch):
+    path = tmp_path / "config.toml"
+    original = b"config_version = 3\n[run]\nverify = true\n"
+    path.write_bytes(original)
+    answers = iter(["yes", "", "yes", ""])
+    monkeypatch.setattr("builtins.input", lambda prompt: next(answers))
+    bootstrap.upgrade_user_config(path)
+    config = load_app_config(path, user_config=True)
+    assert config.shn_conversion == config_service.ShnConversionConfig(True, 8, True)
+    assert config.run.verify
+    assert path.with_name("config.toml.v3.bak").read_bytes() == original
 
 
 def test_cancelled_upgrade_leaves_original_alone(tmp_path, monkeypatch):
@@ -224,7 +241,7 @@ def test_missing_upgrade_step_leaves_original_alone(tmp_path, monkeypatch):
     path = tmp_path / "config.toml"
     original = b"config_version = 1\n"
     path.write_bytes(original)
-    monkeypatch.setattr(bootstrap, "CONFIG_VERSION", 3)
+    monkeypatch.setattr(bootstrap, "CONFIG_UPGRADES", {1: bootstrap.CONFIG_UPGRADES[1]})
     monkeypatch.setattr("builtins.input", lambda prompt: pytest.fail("Setup prompted"))
     with pytest.raises(
         ValueError, match="No configuration upgrade available from 2 to 3"
